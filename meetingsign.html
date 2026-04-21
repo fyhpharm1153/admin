@@ -1,0 +1,791 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, doc, setDoc, getDoc, addDoc, onSnapshot, updateDoc, deleteDoc, query, serverTimestamp } from 'firebase/firestore';
+import { 
+  Plus, 
+  Users, 
+  Calendar, 
+  MapPin, 
+  ChevronRight, 
+  ArrowLeft, 
+  UserPlus, 
+  Trash2, 
+  Edit3, 
+  Download, 
+  CheckCircle2,
+  X,
+  Save,
+  Loader2,
+  PieChart,
+  UserCheck,
+  ClipboardList,
+  QrCode,
+  FileSpreadsheet,
+  User,
+  Check
+} from 'lucide-react';
+
+// --- Firebase Configuration ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'meeting-checkin-fengyuan-v5';
+
+// --- Utility: Dynamic Script Loader ---
+const loadScript = (src) => {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) {
+      resolve();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+};
+
+const LoadingSpinner = () => (
+  <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
+    <Loader2 className="animate-spin h-12 w-12 text-blue-500 mb-4" />
+    <p className="text-slate-500 font-medium">系統載入中...</p>
+  </div>
+);
+
+const timeSlots = [];
+for (let h = 8; h <= 17; h++) {
+  const hour = h < 10 ? `0${h}` : h;
+  timeSlots.push(`${hour}:00`);
+  timeSlots.push(`${hour}:30`);
+}
+timeSlots.push('18:00');
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [libsReady, setLibsReady] = useState(false);
+  const [view, setView] = useState('list'); 
+  const [meetings, setMeetings] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [currentMeeting, setCurrentMeeting] = useState(null);
+  const [attendees, setAttendees] = useState([]); 
+  const [observers, setObservers] = useState([]); 
+  const [isAddingMeeting, setIsAddingMeeting] = useState(false);
+  const [showSignPad, setShowSignPad] = useState(null); 
+  const [showQrCode, setShowQrCode] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  
+  // Chairman Editing State
+  const [isEditingChairman, setIsEditingChairman] = useState(false);
+  const [editChairmanValue, setEditChairmanValue] = useState('');
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        await Promise.all([
+          loadScript('https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js'),
+          loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
+          loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'),
+          loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js')
+        ]);
+        setLibsReady(true);
+
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Initialization failed:", err);
+      }
+    };
+    init();
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Sync current meeting with database to get updates (like chairman)
+  useEffect(() => {
+    if (!user || !currentMeeting) return;
+    const meetingRef = doc(db, 'artifacts', appId, 'public', 'data', 'meetings', currentMeeting.id);
+    const unsubscribe = onSnapshot(meetingRef, (doc) => {
+      if (doc.exists()) {
+        setCurrentMeeting({ id: doc.id, ...doc.data() });
+      }
+    });
+    return () => unsubscribe();
+  }, [user, currentMeeting?.id]);
+
+  useEffect(() => {
+    if (!user || meetings.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const meetingId = params.get('m');
+    if (meetingId && view === 'list') {
+      const meeting = meetings.find(m => m.id === meetingId);
+      if (meeting) {
+        setCurrentMeeting(meeting);
+        setView('detail');
+      }
+    }
+  }, [user, meetings, view]);
+
+  useEffect(() => {
+    if (!user) return;
+    const meetingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'meetings');
+    const unsubscribe = onSnapshot(meetingsRef, (snapshot) => {
+      setMeetings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const groupsRef = collection(db, 'artifacts', appId, 'public', 'data', 'groups');
+    const unsubscribe = onSnapshot(groupsRef, (snapshot) => {
+      setGroups(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !currentMeeting) return;
+    
+    const attendeesRef = collection(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`);
+    const unsubAttendees = onSnapshot(attendeesRef, (snapshot) => {
+      setAttendees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    const observersRef = collection(db, 'artifacts', appId, 'public', 'data', `observers_${currentMeeting.id}`);
+    const unsubObservers = onSnapshot(observersRef, (snapshot) => {
+      setObservers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    return () => {
+      unsubAttendees();
+      unsubObservers();
+    };
+  }, [user, currentMeeting?.id]);
+
+  const addMeeting = async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const newMeeting = {
+      title: form.title.value,
+      date: form.date.value,
+      time: form.time.value,
+      location: form.location.value,
+      chairman: form.chairman.value || '',
+      createdAt: serverTimestamp(),
+    };
+    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'meetings'), newMeeting);
+    setIsAddingMeeting(false);
+  };
+
+  const updateChairman = async () => {
+    if (!currentMeeting) return;
+    const meetingRef = doc(db, 'artifacts', appId, 'public', 'data', 'meetings', currentMeeting.id);
+    await updateDoc(meetingRef, {
+      chairman: editChairmanValue
+    });
+    setIsEditingChairman(false);
+  };
+
+  const parseNameAndTitle = (input) => {
+    if (input.includes('-')) {
+      const [title, name] = input.split('-');
+      return { title: title.trim(), name: name.trim() };
+    }
+    return { title: '藥師', name: input.trim() };
+  };
+
+  const addAttendeesBatch = async (namesString) => {
+    if (!namesString.trim() || !currentMeeting) return;
+    const rawNames = namesString.split(/[,，\n]/).map(n => n.trim()).filter(n => n);
+    
+    for (const raw of rawNames) {
+      const { title, name } = parseNameAndTitle(raw);
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`), {
+        title,
+        name,
+        signed: false,
+        status: 'none', 
+        signature: null,
+        signedAt: null
+      });
+    }
+  };
+
+  const updateAttendeeStatus = async (id, status) => {
+    const attendeeRef = doc(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`, id);
+    await updateDoc(attendeeRef, {
+      status: status,
+      signed: status === 'present',
+      signature: status === 'present' ? null : null
+    });
+  };
+
+  const removeAttendee = async (id) => {
+    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`, id));
+  };
+
+  const removeGroup = async (id) => {
+    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', id));
+  };
+
+  const saveSignature = async (type, id, signatureData, extraData = {}) => {
+    const collectionName = type === 'attendee' ? `attendees_${currentMeeting.id}` : `observers_${currentMeeting.id}`;
+    
+    if (type === 'attendee') {
+      const attendeeRef = doc(db, 'artifacts', appId, 'public', 'data', collectionName, id);
+      await updateDoc(attendeeRef, {
+        signed: true,
+        status: 'present',
+        signature: signatureData,
+        signedAt: new Date().toISOString()
+      });
+    } else {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', collectionName), {
+        name: extraData.name,
+        department: extraData.department,
+        signature: signatureData,
+        signedAt: new Date().toISOString()
+      });
+    }
+    setShowSignPad(null);
+  };
+
+  const exportToPDF = async () => {
+    if (!window.jspdf || !window.html2canvas) return;
+    setIsExporting(true);
+    try {
+      const element = document.getElementById('pdf-content');
+      const canvas = await window.html2canvas(element, { scale: 2, useCORS: true });
+      const imgData = canvas.toDataURL('image/png');
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${currentMeeting.title}_簽到單.pdf`);
+    } catch (err) {
+      console.error("PDF Export failed:", err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const exportToExcel = () => {
+    if (!window.XLSX) return;
+    const rows = [];
+    rows.push(["衛生福利部豐原醫院藥劑科 簽到單"]);
+    rows.push(["會議主題", currentMeeting.title]);
+    rows.push(["日期", currentMeeting.date, "時間", currentMeeting.time, "地點", currentMeeting.location]);
+    rows.push(["主席", currentMeeting.chairman]);
+    rows.push([]);
+    rows.push(["出席人員"]);
+    rows.push(["職稱", "姓名", "出席狀態", "備註/簽到時間"]);
+    attendees.forEach(p => {
+      let statusText = p.status === 'present' ? "出席" : (p.status === 'duty' ? "值班" : (p.status === 'vacation' ? "休假" : (p.status === 'leave' ? "請假" : "未簽到")));
+      let note = p.signedAt ? new Date(p.signedAt).toLocaleTimeString() : "";
+      rows.push([p.title, p.name, statusText, note]);
+    });
+    const worksheet = window.XLSX.utils.aoa_to_sheet(rows);
+    const workbook = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+    window.XLSX.writeFile(workbook, `${currentMeeting.title}.xlsx`);
+  };
+
+  const signedCount = attendees.filter(a => a.status === 'present').length;
+  const attendanceRate = attendees.length > 0 ? Math.round((signedCount / attendees.length) * 100) : 0;
+
+  if (!user || !libsReady) return <LoadingSpinner />;
+
+  const currentUrl = window.location.origin + window.location.pathname + `?m=${currentMeeting?.id}`;
+  const qrCodeUrl = `https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl=${encodeURIComponent(currentUrl)}`;
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10">
+      <header className="bg-blue-700 text-white shadow-md p-4 sticky top-0 z-10">
+        <div className="max-w-3xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            {view !== 'list' && (
+              <button onClick={() => setView('list')} className="p-1 hover:bg-blue-800 rounded transition-colors">
+                <ArrowLeft size={24} />
+              </button>
+            )}
+            <h1 className="text-xl font-bold">醫院會議簽到系統</h1>
+          </div>
+          <div className="flex items-center space-x-3">
+            {view === 'list' && (
+              <>
+                <button onClick={() => setView('groups')} className="bg-blue-800 p-2 rounded-full hover:bg-blue-900 transition-colors">
+                  <Users size={22} />
+                </button>
+                <button onClick={() => setIsAddingMeeting(true)} className="bg-white text-blue-700 p-2 rounded-full shadow-lg hover:bg-blue-50 transition-colors">
+                  <Plus size={22} />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-3xl mx-auto p-4">
+        {view === 'list' && (
+          <div className="space-y-4 mt-2">
+            {meetings.length === 0 ? (
+              <div className="text-center py-20 text-slate-400 bg-white rounded-3xl border border-dashed border-slate-300">
+                <Calendar size={48} className="mx-auto mb-4 opacity-10" />
+                <p>目前沒有會議資料</p>
+              </div>
+            ) : (
+              meetings.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).map(meeting => (
+                <div key={meeting.id} onClick={() => { setCurrentMeeting(meeting); setView('detail'); }} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex items-center justify-between cursor-pointer hover:border-blue-400 transition-all active:scale-[0.98]">
+                  <div className="flex-1">
+                    <h3 className="font-bold text-lg text-slate-800">{meeting.title}</h3>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500 mt-2">
+                      <span className="flex items-center font-medium text-blue-600">📅 {meeting.date}</span>
+                      <span className="flex items-center">📍 {meeting.location}</span>
+                    </div>
+                  </div>
+                  <ChevronRight className="text-slate-300" />
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {view === 'groups' && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-right duration-300">
+            <div className="bg-white p-6 rounded-3xl border shadow-sm">
+              <h2 className="text-xl font-bold mb-6 flex items-center"><Users className="mr-2 text-blue-600" /> 常用群組設定</h2>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const form = e.target;
+                const members = form.members.value.split(/[,，\n]/).map(n => n.trim()).filter(n => n);
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'groups'), {
+                  name: form.name.value,
+                  members: members,
+                  createdAt: serverTimestamp(),
+                });
+                form.reset();
+              }} className="space-y-4">
+                <input name="name" required placeholder="群組名稱 (如：藥師、行政)" className="w-full p-4 rounded-2xl border bg-slate-50 outline-none" />
+                <textarea name="members" required placeholder="職稱-姓名 (例如: 主任-王大明, 組長-李小華)" className="w-full p-4 h-32 rounded-2xl border bg-slate-50 outline-none text-sm" />
+                <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700">儲存常用群組</button>
+              </form>
+            </div>
+            <div className="space-y-3">
+              {groups.map(g => (
+                <div key={g.id} className="bg-white p-4 rounded-2xl border flex justify-between items-center">
+                  <div className="flex-1">
+                    <h4 className="font-bold text-slate-800">{g.name} ({g.members?.length}人)</h4>
+                    <p className="text-xs text-slate-400 mt-1 truncate max-w-xs">{g.members?.join(', ')}</p>
+                  </div>
+                  <button onClick={() => removeGroup(g.id)} className="text-red-300 hover:text-red-500 p-2"><Trash2 size={18} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {view === 'detail' && currentMeeting && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 relative">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div className="flex-1">
+                  <h2 className="text-2xl font-black text-slate-800">{currentMeeting.title}</h2>
+                  <div className="flex flex-wrap gap-4 mt-2 text-slate-500 text-sm">
+                    <span className="bg-slate-100 px-3 py-1 rounded-full font-bold">📅 {currentMeeting.date}</span>
+                    <span className="bg-slate-100 px-3 py-1 rounded-full">🕒 {currentMeeting.time}</span>
+                    <span className="bg-slate-100 px-3 py-1 rounded-full font-medium">📍 {currentMeeting.location}</span>
+                  </div>
+                  
+                  {/* Editable Chairman Field */}
+                  <div className="mt-4 flex items-center gap-2 group">
+                    <span className="text-slate-500 text-sm font-medium">主席/主持人：</span>
+                    {isEditingChairman ? (
+                      <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left duration-200">
+                        <input 
+                          type="text" 
+                          value={editChairmanValue} 
+                          onChange={(e) => setEditChairmanValue(e.target.value)}
+                          className="border rounded px-2 py-1 text-sm font-bold outline-none border-blue-400 shadow-sm"
+                          autoFocus
+                          placeholder="輸入姓名"
+                        />
+                        <button onClick={updateChairman} className="p-1.5 bg-emerald-500 text-white rounded shadow-sm hover:bg-emerald-600">
+                          <Check size={16} />
+                        </button>
+                        <button onClick={() => setIsEditingChairman(false)} className="p-1.5 bg-slate-200 text-slate-600 rounded shadow-sm hover:bg-slate-300">
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <span className="font-bold text-slate-800">{currentMeeting.chairman || '(尚未設定)'}</span>
+                        <button 
+                          onClick={() => {
+                            setEditChairmanValue(currentMeeting.chairman || '');
+                            setIsEditingChairman(true);
+                          }}
+                          className="p-1 text-slate-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Edit3 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2 h-fit">
+                  <button onClick={() => setShowQrCode(true)} className="bg-slate-100 p-3 rounded-2xl hover:bg-slate-200 transition-colors"><QrCode size={20} /></button>
+                  <button onClick={() => setView('admin')} className="bg-slate-800 text-white px-5 py-2.5 rounded-2xl font-bold hover:bg-slate-900 transition-colors">管理名單</button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-blue-50 p-5 rounded-3xl border border-blue-100 flex flex-col items-center">
+                  <p className="text-[10px] text-blue-600 font-black uppercase tracking-widest text-center">出席率</p>
+                  <p className="text-3xl font-black text-blue-900 mt-1">{attendanceRate}%</p>
+                </div>
+                <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex flex-col items-center">
+                  <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest text-center">實到 / 應到</p>
+                  <p className="text-3xl font-black text-emerald-900 mt-1">{signedCount} <span className="text-sm font-normal text-slate-400">/ {attendees.length}</span></p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={exportToPDF} disabled={isExporting} className="bg-emerald-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center active:scale-95 disabled:opacity-50 transition-all text-sm shadow-md">
+                  {isExporting ? <Loader2 className="animate-spin mr-2" /> : <Download size={18} className="mr-2" />}
+                  匯出 PDF (豐原風格)
+                </button>
+                <button onClick={exportToExcel} className="bg-blue-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center active:scale-95 text-sm shadow-md">
+                  <FileSpreadsheet size={18} className="mr-2" />
+                  匯出 Excel
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-8">
+              <section className="space-y-4">
+                <h3 className="font-black text-slate-800 flex items-center px-2"><ClipboardList className="mr-2 text-blue-600" /> 出席名單 ({attendees.length})</h3>
+                <div className="grid gap-3">
+                  {attendees.sort((a, b) => a.name.localeCompare(b.name)).map(person => (
+                    <div key={person.id} className={`bg-white p-4 rounded-2xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${person.status === 'present' ? 'border-emerald-500 bg-emerald-50/20 shadow-inner' : 'border-slate-100 shadow-sm'}`}>
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${person.status === 'present' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'bg-slate-100 text-slate-400'}`}>
+                          {person.status === 'present' ? <CheckCircle2 size={22} /> : <User size={20} />}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded tracking-wide">{person.title}</span>
+                            <p className="font-bold text-slate-800 text-lg">{person.name}</p>
+                          </div>
+                          {person.status !== 'none' && person.status !== 'present' && (
+                            <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded italic">狀態：{person.status === 'duty' ? '值班' : person.status === 'vacation' ? '休假' : '請假'}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {person.status === 'present' ? (
+                          <img src={person.signature} alt="sign" className="h-10 w-24 object-contain filter drop-shadow-sm" />
+                        ) : (
+                          <>
+                            <button onClick={() => setShowSignPad({ type: 'attendee', data: person })} className="flex-1 sm:flex-none bg-blue-600 text-white px-5 py-2 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all">簽名</button>
+                            <select 
+                              className="text-xs border rounded-lg p-2 bg-slate-50 font-bold outline-none cursor-pointer hover:bg-slate-100 transition-colors"
+                              value={person.status}
+                              onChange={(e) => updateAttendeeStatus(person.id, e.target.value)}
+                            >
+                              <option value="none">-- 備註 --</option>
+                              <option value="duty">值班</option>
+                              <option value="vacation">休假</option>
+                              <option value="leave">請假</option>
+                            </select>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="space-y-4">
+                <div className="flex items-center justify-between px-2">
+                  <h3 className="font-black text-slate-800 flex items-center"><Plus className="mr-2 text-orange-500" /> 列席人員 ({observers.length})</h3>
+                  <button onClick={() => setShowSignPad({ type: 'observer', data: null })} className="bg-orange-100 text-orange-600 text-sm font-bold px-4 py-1.5 rounded-full hover:bg-orange-200 transition-colors">臨時加入</button>
+                </div>
+                {observers.map(o => (
+                  <div key={o.id} className="bg-white p-4 rounded-2xl border-2 border-orange-100 flex items-center justify-between shadow-sm">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 text-[10px] font-black flex items-center justify-center">列席</div>
+                      <p className="font-bold text-slate-800">{o.name} <span className="text-xs text-slate-400 font-normal">({o.department})</span></p>
+                    </div>
+                    <img src={o.signature} alt="sign" className="h-10 w-24 object-contain filter drop-shadow-sm" />
+                  </div>
+                ))}
+              </section>
+            </div>
+          </div>
+        )}
+
+        {view === 'admin' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between px-2">
+              <h2 className="text-xl font-black">編輯出席名單</h2>
+              <button onClick={() => setView('detail')} className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl font-bold">完成設定</button>
+            </div>
+            <div className="bg-blue-50 p-5 rounded-3xl border-2 border-dashed border-blue-200">
+              <h4 className="text-xs font-bold text-blue-500 mb-3 flex items-center uppercase tracking-widest"><Users size={14} className="mr-2" /> 從常用群組匯入</h4>
+              <div className="flex flex-wrap gap-2">
+                {groups.map(g => (
+                  <button key={g.id} onClick={() => addAttendeesBatch(g.members.join(','))} className="bg-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm border hover:border-blue-500 transition-all">+ {g.name}</button>
+                ))}
+              </div>
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); addAttendeesBatch(e.target.names.value); e.target.reset(); }} className="bg-white p-5 rounded-3xl border space-y-4 shadow-sm">
+              <label className="block text-sm font-bold text-slate-600">手動輸入人員 (職稱-姓名, 以逗點或換行區隔)</label>
+              <textarea name="names" placeholder="例如：主任-王大明, 藥師-李小華, 張三" className="w-full p-4 h-24 rounded-2xl border bg-slate-50 outline-none text-sm" required />
+              <button className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700 transition-colors">批次加入</button>
+            </form>
+            <div className="bg-white rounded-3xl border overflow-hidden">
+              <div className="bg-slate-50 p-3 text-xs font-bold text-slate-400 border-b uppercase tracking-wider">目前會議名單 ({attendees.length}人)</div>
+              {attendees.map(p => (
+                <div key={p.id} className="p-3 border-b last:border-0 flex justify-between items-center group">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-bold uppercase">{p.title}</span>
+                    <span className="font-bold text-slate-700">{p.name}</span>
+                  </div>
+                  <button onClick={() => removeAttendee(p.id)} className="text-red-300 hover:text-red-600 p-1 transition-colors"><Trash2 size={16} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+
+      {isAddingMeeting && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full h-full sm:h-auto max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in duration-200 overflow-y-auto">
+            <h2 className="text-2xl font-black mb-6">建立新會議</h2>
+            <form onSubmit={addMeeting} className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">會議主題</label>
+                <input name="title" required className="w-full p-4 rounded-2xl border bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" placeholder="例如: 藥劑科115年度會議" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">日期</label>
+                  <input name="date" type="date" required className="w-full p-4 rounded-2xl border bg-slate-50 outline-none" defaultValue={new Date().toISOString().split('T')[0]} />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">時間</label>
+                  <select name="time" required className="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold">
+                    {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">主席/主持人</label>
+                <input name="chairman" className="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold focus:ring-2 focus:ring-blue-500" placeholder="輸入姓名 (可留空)" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">地點</label>
+                <input name="location" required className="w-full p-4 rounded-2xl border bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" defaultValue="藥劑科會議室" />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setIsAddingMeeting(false)} className="flex-1 py-4 border-2 rounded-2xl font-bold text-slate-400">取消</button>
+                <button type="submit" className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl active:scale-95 transition-all">建立會議</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showQrCode && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowQrCode(false)}>
+          <div className="bg-white p-8 rounded-[3rem] text-center max-w-sm w-full animate-in zoom-in duration-300 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-black mb-2 text-slate-800">{currentMeeting.title}</h3>
+            <p className="text-sm text-slate-400 mb-6 font-bold">掃描 QR Code 開啟簽到頁面</p>
+            <div className="bg-white p-4 border-8 border-slate-50 rounded-3xl inline-block mb-6 shadow-inner">
+              <img src={qrCodeUrl} alt="QR Code" className="w-64 h-64 mx-auto" />
+            </div>
+            <button onClick={() => setShowQrCode(false)} className="w-full bg-slate-100 py-4 rounded-2xl font-bold text-slate-600 hover:bg-slate-200 transition-colors">關閉視窗</button>
+          </div>
+        </div>
+      )}
+
+      {showSignPad && (
+        <SignPadModal 
+          mode={showSignPad.type}
+          person={showSignPad.data} 
+          onClose={() => setShowSignPad(null)} 
+          onSave={(data, extra) => saveSignature(showSignPad.type, showSignPad.data?.id, data, extra)}
+        />
+      )}
+
+      {/* Hidden PDF Export Area (Fengyuan Style) */}
+      <div className="fixed -left-[4000px] top-0">
+        <div id="pdf-content" className="w-[850px] bg-white p-16 font-serif">
+          <div className="text-center mb-10">
+            <h1 className="text-3xl font-bold tracking-widest border-b-2 border-black pb-2 inline-block">衛生福利部豐原醫院</h1>
+            <h2 className="text-2xl font-bold mt-4">{currentMeeting?.title} 簽到單</h2>
+            
+            <div className="mt-8 text-left space-y-2 text-lg font-bold">
+              <p>時間：{currentMeeting?.date} {currentMeeting?.time}</p>
+              <p>地點：{currentMeeting?.location}</p>
+              <p>主席/主持人：{currentMeeting?.chairman || '(未設定)'}</p>
+            </div>
+          </div>
+          
+          <div className="text-lg font-bold mb-2">出列席人員：</div>
+          <table className="w-full border-collapse border-2 border-black text-center text-lg">
+            <thead>
+              <tr className="bg-slate-50 h-14">
+                <th className="border-2 border-black p-2 w-[15%]">職 稱</th>
+                <th className="border-2 border-black p-2 w-[25%]">姓 名</th>
+                <th className="border-2 border-black p-2 w-[40%]">簽 名</th>
+                <th className="border-2 border-black p-2 w-[20%]">備 註</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attendees.sort((a,b) => a.name.localeCompare(b.name)).map((p, idx) => (
+                <tr key={p.id} className="h-20">
+                  <td className="border-2 border-black p-2">{p.title}</td>
+                  <td className="border-2 border-black p-2 font-bold">{p.name}</td>
+                  <td className="border-2 border-black p-2">
+                    {p.status === 'present' && p.signature ? <img src={p.signature} alt="sign" className="h-14 mx-auto" /> : ''}
+                  </td>
+                  <td className="border-2 border-black p-2 text-base">
+                    {p.status !== 'present' && p.status !== 'none' ? (p.status === 'duty' ? '值班' : p.status === 'vacation' ? '休假' : '請假') : ''}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="mt-6 text-lg font-bold border-t-2 border-black pt-4">
+            出席率：{attendanceRate}% ({signedCount}/{attendees.length})
+            <p className="text-sm font-normal text-slate-500">(實際出席人數/應出席人數*100%)</p>
+          </div>
+
+          {observers.length > 0 && (
+            <div className="mt-10">
+              <div className="text-lg font-bold mb-2">列席人員：</div>
+              <table className="w-full border-collapse border-2 border-black text-center text-lg">
+                <thead>
+                  <tr className="bg-slate-50 h-12">
+                    <th className="border-2 border-black p-2 w-[15%]">職稱</th>
+                    <th className="border-2 border-black p-2 w-[25%]">姓名</th>
+                    <th className="border-2 border-black p-2 w-[40%]">簽名</th>
+                    <th className="border-2 border-black p-2 w-[20%]">備註</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {observers.map(o => (
+                    <tr key={o.id} className="h-20">
+                      <td className="border-2 border-black p-2">列席</td>
+                      <td className="border-2 border-black p-2">{o.name}</td>
+                      <td className="border-2 border-black p-2">
+                        <img src={o.signature} alt="sign" className="h-14 mx-auto" />
+                      </td>
+                      <td className="border-2 border-black p-2 text-sm">{o.department}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          
+          <div className="mt-20 text-right text-sm text-slate-400">
+            檔案識別碼：{currentMeeting?.id} | 列印日期：{new Date().toLocaleDateString()}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Signature Modal
+function SignPadModal({ mode, person, onClose, onSave }) {
+  const canvasRef = useRef(null);
+  const padRef = useRef(null);
+  const [formData, setFormData] = useState({ name: '', department: '' });
+
+  useEffect(() => {
+    if (canvasRef.current && window.SignaturePad) {
+      const canvas = canvasRef.current;
+      const ratio = Math.max(window.devicePixelRatio || 1, 1);
+      canvas.width = canvas.offsetWidth * ratio;
+      canvas.height = canvas.offsetHeight * ratio;
+      canvas.getContext("2d").scale(ratio, ratio);
+
+      padRef.current = new window.SignaturePad(canvas, {
+        backgroundColor: 'rgb(255, 255, 255)',
+        penColor: 'rgb(0, 0, 0)',
+        minWidth: 2,
+        maxWidth: 5
+      });
+    }
+  }, []);
+
+  const handleSave = () => {
+    if (padRef.current && !padRef.current.isEmpty()) {
+      if (mode === 'observer' && (!formData.name || !formData.department)) return;
+      onSave(padRef.current.toDataURL(), formData);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-0 md:p-4">
+      <div className="bg-white w-full h-full md:h-auto md:max-w-xl md:rounded-[3rem] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+        <div className="p-6 border-b flex justify-between items-center bg-slate-50 shadow-sm">
+          <div className="flex-1">
+            <h2 className="text-2xl font-black text-slate-800">{mode === 'attendee' ? '簽名簽到' : '列席簽到'}</h2>
+            <p className="text-sm text-slate-500 mt-1">
+              {mode === 'attendee' ? (
+                <><span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-bold mr-2 text-xs">{person.title}</span><span className="text-slate-900 font-black text-xl underline">{person.name}</span></>
+              ) : (
+                '請填寫資訊並手寫簽名'
+              )}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-3 bg-white border shadow-sm rounded-full hover:bg-slate-50 transition-colors active:scale-90"><X size={24} /></button>
+        </div>
+        <div className="flex-1 bg-slate-100 p-6 space-y-4 flex flex-col">
+          {mode === 'observer' && (
+            <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-top duration-300 mb-2">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 ml-1 uppercase">您的姓名</label>
+                <input placeholder="輸入姓名" className="w-full p-4 rounded-2xl border-2 border-white focus:border-blue-500 outline-none font-bold shadow-sm" onChange={e => setFormData({...formData, name: e.target.value})} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 ml-1 uppercase">單位名稱</label>
+                <input placeholder="輸入單位" className="w-full p-4 rounded-2xl border-2 border-white focus:border-blue-500 outline-none font-bold shadow-sm" onChange={e => setFormData({...formData, department: e.target.value})} />
+              </div>
+            </div>
+          )}
+          <div className="flex-1 min-h-[300px] sm:min-h-[350px] bg-white rounded-[2.5rem] border-4 border-dashed border-slate-200 relative overflow-hidden shadow-inner flex flex-col">
+            <canvas ref={canvasRef} className="flex-1 w-full cursor-crosshair touch-none" />
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-5 select-none">
+              <span className="text-6xl font-black rotate-[-15deg]">SIGN HERE</span>
+            </div>
+          </div>
+        </div>
+        <div className="p-6 bg-white border-t flex gap-4">
+          <button onClick={() => padRef.current.clear()} className="flex-1 py-4 border-2 rounded-2xl font-black text-slate-400 hover:bg-slate-50 transition-colors">清除重簽</button>
+          <button onClick={handleSave} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-2 shadow-lg hover:bg-blue-700 active:scale-95 transition-all">
+            <Save size={24} /> 確認簽到
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,791 +1,798 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, getDoc, addDoc, onSnapshot, updateDoc, deleteDoc, query, serverTimestamp } from 'firebase/firestore';
-import { 
-  Plus, 
-  Users, 
-  Calendar, 
-  MapPin, 
-  ChevronRight, 
-  ArrowLeft, 
-  UserPlus, 
-  Trash2, 
-  Edit3, 
-  Download, 
-  CheckCircle2,
-  X,
-  Save,
-  Loader2,
-  PieChart,
-  UserCheck,
-  ClipboardList,
-  QrCode,
-  FileSpreadsheet,
-  User,
-  Check
-} from 'lucide-react';
-
-// --- Firebase Configuration ---
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'meeting-checkin-fengyuan-v5';
-
-// --- Utility: Dynamic Script Loader ---
-const loadScript = (src) => {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) {
-      resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = src;
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-};
-
-const LoadingSpinner = () => (
-  <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
-    <Loader2 className="animate-spin h-12 w-12 text-blue-500 mb-4" />
-    <p className="text-slate-500 font-medium">系統載入中...</p>
-  </div>
-);
-
-const timeSlots = [];
-for (let h = 8; h <= 17; h++) {
-  const hour = h < 10 ? `0${h}` : h;
-  timeSlots.push(`${hour}:00`);
-  timeSlots.push(`${hour}:30`);
-}
-timeSlots.push('18:00');
-
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [libsReady, setLibsReady] = useState(false);
-  const [view, setView] = useState('list'); 
-  const [meetings, setMeetings] = useState([]);
-  const [groups, setGroups] = useState([]);
-  const [currentMeeting, setCurrentMeeting] = useState(null);
-  const [attendees, setAttendees] = useState([]); 
-  const [observers, setObservers] = useState([]); 
-  const [isAddingMeeting, setIsAddingMeeting] = useState(false);
-  const [showSignPad, setShowSignPad] = useState(null); 
-  const [showQrCode, setShowQrCode] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  
-  // Chairman Editing State
-  const [isEditingChairman, setIsEditingChairman] = useState(false);
-  const [editChairmanValue, setEditChairmanValue] = useState('');
-
-  useEffect(() => {
-    const init = async () => {
-      try {
-        await Promise.all([
-          loadScript('https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js'),
-          loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
-          loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'),
-          loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js')
-        ]);
-        setLibsReady(true);
-
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) {
-        console.error("Initialization failed:", err);
-      }
-    };
-    init();
-
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Sync current meeting with database to get updates (like chairman)
-  useEffect(() => {
-    if (!user || !currentMeeting) return;
-    const meetingRef = doc(db, 'artifacts', appId, 'public', 'data', 'meetings', currentMeeting.id);
-    const unsubscribe = onSnapshot(meetingRef, (doc) => {
-      if (doc.exists()) {
-        setCurrentMeeting({ id: doc.id, ...doc.data() });
-      }
-    });
-    return () => unsubscribe();
-  }, [user, currentMeeting?.id]);
-
-  useEffect(() => {
-    if (!user || meetings.length === 0) return;
-    const params = new URLSearchParams(window.location.search);
-    const meetingId = params.get('m');
-    if (meetingId && view === 'list') {
-      const meeting = meetings.find(m => m.id === meetingId);
-      if (meeting) {
-        setCurrentMeeting(meeting);
-        setView('detail');
-      }
-    }
-  }, [user, meetings, view]);
-
-  useEffect(() => {
-    if (!user) return;
-    const meetingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'meetings');
-    const unsubscribe = onSnapshot(meetingsRef, (snapshot) => {
-      setMeetings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    return () => unsubscribe();
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    const groupsRef = collection(db, 'artifacts', appId, 'public', 'data', 'groups');
-    const unsubscribe = onSnapshot(groupsRef, (snapshot) => {
-      setGroups(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    return () => unsubscribe();
-  }, [user]);
-
-  useEffect(() => {
-    if (!user || !currentMeeting) return;
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>醫院會議簽到系統 - 豐原醫院風格</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
-    const attendeesRef = collection(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`);
-    const unsubAttendees = onSnapshot(attendeesRef, (snapshot) => {
-      setAttendees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; }
+        .signature-pad-canvas { touch-action: none; }
+        /* 隱藏 PDF 生成區域 */
+        #pdf-export-container { position: fixed; left: -9999px; top: 0; }
+        .hidden-view { display: none !important; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen pb-10">
 
-    const observersRef = collection(db, 'artifacts', appId, 'public', 'data', `observers_${currentMeeting.id}`);
-    const unsubObservers = onSnapshot(observersRef, (snapshot) => {
-      setObservers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    return () => {
-      unsubAttendees();
-      unsubObservers();
-    };
-  }, [user, currentMeeting?.id]);
-
-  const addMeeting = async (e) => {
-    e.preventDefault();
-    const form = e.target;
-    const newMeeting = {
-      title: form.title.value,
-      date: form.date.value,
-      time: form.time.value,
-      location: form.location.value,
-      chairman: form.chairman.value || '',
-      createdAt: serverTimestamp(),
-    };
-    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'meetings'), newMeeting);
-    setIsAddingMeeting(false);
-  };
-
-  const updateChairman = async () => {
-    if (!currentMeeting) return;
-    const meetingRef = doc(db, 'artifacts', appId, 'public', 'data', 'meetings', currentMeeting.id);
-    await updateDoc(meetingRef, {
-      chairman: editChairmanValue
-    });
-    setIsEditingChairman(false);
-  };
-
-  const parseNameAndTitle = (input) => {
-    if (input.includes('-')) {
-      const [title, name] = input.split('-');
-      return { title: title.trim(), name: name.trim() };
-    }
-    return { title: '藥師', name: input.trim() };
-  };
-
-  const addAttendeesBatch = async (namesString) => {
-    if (!namesString.trim() || !currentMeeting) return;
-    const rawNames = namesString.split(/[,，\n]/).map(n => n.trim()).filter(n => n);
-    
-    for (const raw of rawNames) {
-      const { title, name } = parseNameAndTitle(raw);
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`), {
-        title,
-        name,
-        signed: false,
-        status: 'none', 
-        signature: null,
-        signedAt: null
-      });
-    }
-  };
-
-  const updateAttendeeStatus = async (id, status) => {
-    const attendeeRef = doc(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`, id);
-    await updateDoc(attendeeRef, {
-      status: status,
-      signed: status === 'present',
-      signature: status === 'present' ? null : null
-    });
-  };
-
-  const removeAttendee = async (id) => {
-    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`, id));
-  };
-
-  const removeGroup = async (id) => {
-    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', id));
-  };
-
-  const saveSignature = async (type, id, signatureData, extraData = {}) => {
-    const collectionName = type === 'attendee' ? `attendees_${currentMeeting.id}` : `observers_${currentMeeting.id}`;
-    
-    if (type === 'attendee') {
-      const attendeeRef = doc(db, 'artifacts', appId, 'public', 'data', collectionName, id);
-      await updateDoc(attendeeRef, {
-        signed: true,
-        status: 'present',
-        signature: signatureData,
-        signedAt: new Date().toISOString()
-      });
-    } else {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', collectionName), {
-        name: extraData.name,
-        department: extraData.department,
-        signature: signatureData,
-        signedAt: new Date().toISOString()
-      });
-    }
-    setShowSignPad(null);
-  };
-
-  const exportToPDF = async () => {
-    if (!window.jspdf || !window.html2canvas) return;
-    setIsExporting(true);
-    try {
-      const element = document.getElementById('pdf-content');
-      const canvas = await window.html2canvas(element, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`${currentMeeting.title}_簽到單.pdf`);
-    } catch (err) {
-      console.error("PDF Export failed:", err);
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const exportToExcel = () => {
-    if (!window.XLSX) return;
-    const rows = [];
-    rows.push(["衛生福利部豐原醫院藥劑科 簽到單"]);
-    rows.push(["會議主題", currentMeeting.title]);
-    rows.push(["日期", currentMeeting.date, "時間", currentMeeting.time, "地點", currentMeeting.location]);
-    rows.push(["主席", currentMeeting.chairman]);
-    rows.push([]);
-    rows.push(["出席人員"]);
-    rows.push(["職稱", "姓名", "出席狀態", "備註/簽到時間"]);
-    attendees.forEach(p => {
-      let statusText = p.status === 'present' ? "出席" : (p.status === 'duty' ? "值班" : (p.status === 'vacation' ? "休假" : (p.status === 'leave' ? "請假" : "未簽到")));
-      let note = p.signedAt ? new Date(p.signedAt).toLocaleTimeString() : "";
-      rows.push([p.title, p.name, statusText, note]);
-    });
-    const worksheet = window.XLSX.utils.aoa_to_sheet(rows);
-    const workbook = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
-    window.XLSX.writeFile(workbook, `${currentMeeting.title}.xlsx`);
-  };
-
-  const signedCount = attendees.filter(a => a.status === 'present').length;
-  const attendanceRate = attendees.length > 0 ? Math.round((signedCount / attendees.length) * 100) : 0;
-
-  if (!user || !libsReady) return <LoadingSpinner />;
-
-  const currentUrl = window.location.origin + window.location.pathname + `?m=${currentMeeting?.id}`;
-  const qrCodeUrl = `https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl=${encodeURIComponent(currentUrl)}`;
-
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10">
-      <header className="bg-blue-700 text-white shadow-md p-4 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            {view !== 'list' && (
-              <button onClick={() => setView('list')} className="p-1 hover:bg-blue-800 rounded transition-colors">
-                <ArrowLeft size={24} />
-              </button>
-            )}
-            <h1 className="text-xl font-bold">醫院會議簽到系統</h1>
-          </div>
-          <div className="flex items-center space-x-3">
-            {view === 'list' && (
-              <>
-                <button onClick={() => setView('groups')} className="bg-blue-800 p-2 rounded-full hover:bg-blue-900 transition-colors">
-                  <Users size={22} />
+    <!-- Header -->
+    <header class="bg-blue-700 text-white shadow-md p-4 sticky top-0 z-40">
+        <div class="max-w-3xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+                <button id="back-btn" class="p-1 hover:bg-blue-800 rounded transition-colors hidden">
+                    <i data-lucide="arrow-left"></i>
                 </button>
-                <button onClick={() => setIsAddingMeeting(true)} className="bg-white text-blue-700 p-2 rounded-full shadow-lg hover:bg-blue-50 transition-colors">
-                  <Plus size={22} />
+                <h1 class="text-xl font-bold">醫院會議簽到系統</h1>
+            </div>
+            <div id="header-actions" class="flex items-center space-x-3">
+                <button id="nav-groups-btn" class="bg-blue-800 p-2 rounded-full hover:bg-blue-900">
+                    <i data-lucide="users"></i>
                 </button>
-              </>
-            )}
-          </div>
+                <button id="open-add-meeting-btn" class="bg-white text-blue-700 p-2 rounded-full shadow-lg hover:bg-blue-50">
+                    <i data-lucide="plus"></i>
+                </button>
+            </div>
         </div>
-      </header>
+    </header>
 
-      <main className="max-w-3xl mx-auto p-4">
-        {view === 'list' && (
-          <div className="space-y-4 mt-2">
-            {meetings.length === 0 ? (
-              <div className="text-center py-20 text-slate-400 bg-white rounded-3xl border border-dashed border-slate-300">
-                <Calendar size={48} className="mx-auto mb-4 opacity-10" />
-                <p>目前沒有會議資料</p>
-              </div>
-            ) : (
-              meetings.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).map(meeting => (
-                <div key={meeting.id} onClick={() => { setCurrentMeeting(meeting); setView('detail'); }} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex items-center justify-between cursor-pointer hover:border-blue-400 transition-all active:scale-[0.98]">
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg text-slate-800">{meeting.title}</h3>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500 mt-2">
-                      <span className="flex items-center font-medium text-blue-600">📅 {meeting.date}</span>
-                      <span className="flex items-center">📍 {meeting.location}</span>
+    <main class="max-w-3xl mx-auto p-4">
+        <!-- Loading State -->
+        <div id="loading-view" class="flex flex-col items-center justify-center py-20">
+            <div class="animate-spin text-blue-600 mb-4">
+                <i data-lucide="loader-2" size="48"></i>
+            </div>
+            <p class="text-slate-500 font-medium">系統連線中...</p>
+        </div>
+
+        <!-- View: Meeting List -->
+        <div id="list-view" class="space-y-4 mt-2 hidden-view">
+            <div id="meetings-container" class="space-y-4"></div>
+        </div>
+
+        <!-- View: Meeting Detail -->
+        <div id="detail-view" class="space-y-6 hidden-view">
+            <div class="bg-white rounded-3xl shadow-sm border p-6">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                    <div class="flex-1">
+                        <h2 id="detail-title" class="text-2xl font-black text-slate-800"></h2>
+                        <div class="flex flex-wrap gap-4 mt-2 text-slate-500 text-sm">
+                            <span id="detail-date" class="bg-slate-100 px-3 py-1 rounded-full font-bold text-blue-600"></span>
+                            <span id="detail-time" class="bg-slate-100 px-3 py-1 rounded-full"></span>
+                            <span id="detail-location" class="bg-slate-100 px-3 py-1 rounded-full"></span>
+                        </div>
+                        <div class="mt-4 flex items-center gap-2">
+                            <span class="text-slate-500 text-sm">主席/主持人：</span>
+                            <span id="detail-chairman" class="font-bold text-slate-800"></span>
+                            <button id="edit-chairman-btn" class="p-1 text-slate-300 hover:text-blue-500">
+                                <i data-lucide="edit-3" size="14"></i>
+                            </button>
+                        </div>
                     </div>
-                  </div>
-                  <ChevronRight className="text-slate-300" />
+                    <div class="flex gap-2">
+                        <button id="show-qr-btn" class="bg-slate-100 p-3 rounded-2xl hover:bg-slate-200">
+                            <i data-lucide="qr-code"></i>
+                        </button>
+                        <button id="nav-admin-btn" class="bg-slate-800 text-white px-5 py-2.5 rounded-2xl font-bold hover:bg-slate-900">
+                            管理名單
+                        </button>
+                    </div>
                 </div>
-              ))
-            )}
-          </div>
-        )}
 
-        {view === 'groups' && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-right duration-300">
-            <div className="bg-white p-6 rounded-3xl border shadow-sm">
-              <h2 className="text-xl font-bold mb-6 flex items-center"><Users className="mr-2 text-blue-600" /> 常用群組設定</h2>
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.target;
-                const members = form.members.value.split(/[,，\n]/).map(n => n.trim()).filter(n => n);
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'groups'), {
-                  name: form.name.value,
-                  members: members,
-                  createdAt: serverTimestamp(),
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div class="bg-blue-50 p-5 rounded-3xl border border-blue-100 flex flex-col items-center">
+                        <p class="text-[10px] text-blue-600 font-black uppercase">出席率</p>
+                        <p id="stat-rate" class="text-3xl font-black text-blue-900 mt-1">0%</p>
+                    </div>
+                    <div class="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex flex-col items-center">
+                        <p class="text-[10px] text-emerald-600 font-black uppercase">實到 / 應到</p>
+                        <p id="stat-count" class="text-3xl font-black text-emerald-900 mt-1">0 / 0</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <button id="pdf-btn" class="bg-emerald-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center text-sm shadow-md active:scale-95">
+                        <i data-lucide="download" class="mr-2" size="18"></i> 匯出 PDF
+                    </button>
+                    <button id="excel-btn" class="bg-blue-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center text-sm shadow-md active:scale-95">
+                        <i data-lucide="file-spreadsheet" class="mr-2" size="18"></i> 匯出 Excel
+                    </button>
+                </div>
+            </div>
+
+            <section class="space-y-4">
+                <h3 class="font-black text-slate-800 flex items-center px-2">
+                    <i data-lucide="clipboard-list" class="mr-2 text-blue-600"></i> 出席名單
+                </h3>
+                <div id="attendees-container" class="grid gap-3"></div>
+            </section>
+
+            <section class="space-y-4">
+                <div class="flex items-center justify-between px-2">
+                    <h3 class="font-black text-slate-800 flex items-center">
+                        <i data-lucide="plus" class="mr-2 text-orange-500"></i> 列席人員
+                    </h3>
+                    <button id="guest-sign-btn" class="bg-orange-100 text-orange-600 text-sm font-bold px-4 py-1.5 rounded-full">臨時加入</button>
+                </div>
+                <div id="observers-container" class="grid gap-3"></div>
+            </section>
+        </div>
+
+        <!-- View: Admin -->
+        <div id="admin-view" class="space-y-6 hidden-view">
+            <div class="flex items-center justify-between px-2">
+                <h2 class="text-xl font-black">編輯出席名單</h2>
+                <button id="admin-done-btn" class="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl font-bold">完成</button>
+            </div>
+            <div class="bg-blue-50 p-5 rounded-3xl border-2 border-dashed border-blue-200">
+                <h4 class="text-xs font-bold text-blue-500 mb-3 flex items-center uppercase"><i data-lucide="users" size="14" class="mr-2"></i> 從常用群組匯入</h4>
+                <div id="group-import-container" class="flex flex-wrap gap-2"></div>
+            </div>
+            <div class="bg-white p-5 rounded-3xl border space-y-4 shadow-sm">
+                <label class="block text-sm font-bold text-slate-600">手動輸入人員 (職稱-姓名, 以逗點或換行區隔)</label>
+                <textarea id="batch-names-input" placeholder="例如：主任-王大明, 藥師-李小華" class="w-full p-4 h-24 rounded-2xl border bg-slate-50 outline-none text-sm"></textarea>
+                <button id="batch-add-btn" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold">批次加入</button>
+            </div>
+            <div class="bg-white rounded-3xl border overflow-hidden">
+                <div id="admin-list-count" class="bg-slate-50 p-3 text-xs font-bold text-slate-400 border-b">目前名單</div>
+                <div id="admin-attendees-list"></div>
+            </div>
+        </div>
+
+        <!-- View: Groups -->
+        <div id="groups-view" class="space-y-6 hidden-view">
+            <div class="bg-white p-6 rounded-3xl border shadow-sm">
+                <h2 class="text-xl font-bold mb-6 flex items-center"><i data-lucide="users" class="mr-2 text-blue-600"></i> 常用群組設定</h2>
+                <div class="space-y-4">
+                    <input id="new-group-name" placeholder="群組名稱" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none" />
+                    <textarea id="new-group-members" placeholder="職稱-姓名 (以逗點區隔)" class="w-full p-4 h-32 rounded-2xl border bg-slate-50 outline-none text-sm"></textarea>
+                    <button id="save-group-btn" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold">儲存常用群組</button>
+                </div>
+            </div>
+            <div id="groups-container" class="space-y-3"></div>
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <!-- Add Meeting Modal -->
+    <div id="add-meeting-modal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 hidden-view">
+        <div class="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
+            <h2 class="text-2xl font-black mb-6">建立新會議</h2>
+            <div class="space-y-4">
+                <input id="m-title" placeholder="會議主題" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none" />
+                <div class="grid grid-cols-2 gap-4">
+                    <input id="m-date" type="date" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none" />
+                    <select id="m-time" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold"></select>
+                </div>
+                <input id="m-chairman" placeholder="主席/主持人 (可留空)" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none" />
+                <input id="m-location" placeholder="地點" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none" value="藥劑科會議室" />
+                <div class="flex gap-3 pt-4">
+                    <button id="close-add-modal-btn" class="flex-1 py-4 border-2 rounded-2xl font-bold text-slate-400">取消</button>
+                    <button id="confirm-add-meeting-btn" class="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl">建立會議</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- QR Code Modal -->
+    <div id="qr-modal" class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 hidden-view">
+        <div class="bg-white p-8 rounded-[3rem] text-center max-w-sm w-full">
+            <h3 id="qr-meeting-title" class="text-xl font-black mb-2"></h3>
+            <p class="text-sm text-slate-400 mb-6">請參會人員掃描 QR Code 簽到</p>
+            <div class="bg-white p-4 border-8 border-slate-50 rounded-3xl inline-block mb-6">
+                <img id="qr-image" src="" alt="QR Code" class="w-64 h-64 mx-auto" />
+            </div>
+            <button id="close-qr-modal-btn" class="w-full bg-slate-100 py-4 rounded-2xl font-bold text-slate-600">關閉</button>
+        </div>
+    </div>
+
+    <!-- Signature Modal -->
+    <div id="signature-modal" class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-0 md:p-4 hidden-view">
+        <div class="bg-white w-full h-full md:h-auto md:max-w-xl md:rounded-[3rem] flex flex-col shadow-2xl overflow-hidden">
+            <div class="p-6 border-b flex justify-between items-center bg-slate-50">
+                <div id="sig-info">
+                    <h2 class="text-2xl font-black text-slate-800">簽名簽到</h2>
+                    <p class="text-sm text-slate-500 mt-1">請簽署姓名：<span id="sig-name" class="text-blue-600 font-black text-xl underline"></span></p>
+                </div>
+                <button id="close-sig-modal-btn" class="p-3 bg-white border shadow-sm rounded-full"><i data-lucide="x"></i></button>
+            </div>
+            <div id="sig-observer-fields" class="p-6 bg-slate-100 space-y-4 hidden-view">
+                <div class="grid grid-cols-2 gap-4">
+                    <input id="sig-obs-name" placeholder="姓名" class="w-full p-4 rounded-2xl border-2 border-white focus:border-blue-500 outline-none font-bold" />
+                    <input id="sig-obs-dept" placeholder="單位" class="w-full p-4 rounded-2xl border-2 border-white focus:border-blue-500 outline-none font-bold" />
+                </div>
+            </div>
+            <div class="flex-1 bg-slate-100 p-6 flex flex-col">
+                <div class="flex-1 min-h-[300px] bg-white rounded-[2.5rem] border-4 border-dashed border-slate-200 relative overflow-hidden flex flex-col">
+                    <canvas id="signature-canvas" class="flex-1 w-full signature-pad-canvas"></canvas>
+                </div>
+            </div>
+            <div class="p-6 bg-white border-t flex gap-4">
+                <button id="clear-sig-btn" class="flex-1 py-4 border-2 rounded-2xl font-black text-slate-400">清除</button>
+                <button id="save-sig-btn" class="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2">
+                    <i data-lucide="save"></i> 確認簽到
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Export Container -->
+    <div id="pdf-export-container">
+        <div id="pdf-content" class="w-[850px] bg-white p-16 font-serif text-black">
+            <div class="text-center mb-10">
+                <h1 class="text-3xl font-bold tracking-widest border-b-2 border-black pb-2 inline-block">衛生福利部豐原醫院</h1>
+                <h2 id="pdf-m-title" class="text-2xl font-bold mt-4">會議簽到單</h2>
+                <div class="mt-8 text-left space-y-2 text-lg font-bold">
+                    <p id="pdf-m-time"></p>
+                    <p id="pdf-m-location"></p>
+                    <p id="pdf-m-chairman"></p>
+                </div>
+            </div>
+            <div class="text-lg font-bold mb-2">出列席人員：</div>
+            <table class="w-full border-collapse border-2 border-black text-center text-lg">
+                <thead>
+                    <tr class="bg-gray-50 h-14">
+                        <th class="border-2 border-black p-2 w-[15%]">職 稱</th>
+                        <th class="border-2 border-black p-2 w-[25%]">姓 名</th>
+                        <th class="border-2 border-black p-2 w-[40%]">簽 名</th>
+                        <th className="border-2 border-black p-2 w-[20%]">備 註</th>
+                    </tr>
+                </thead>
+                <tbody id="pdf-attendees-body"></tbody>
+            </table>
+            <div id="pdf-stats" class="mt-6 text-lg font-bold border-t-2 border-black pt-4"></div>
+            <div id="pdf-observers-section" class="mt-10 hidden-view">
+                <div class="text-lg font-bold mb-2">列席人員：</div>
+                <table class="w-full border-collapse border-2 border-black text-center text-lg">
+                    <thead>
+                        <tr class="bg-gray-50 h-12">
+                            <th class="border-2 border-black p-2 w-[15%]">職稱</th>
+                            <th class="border-2 border-black p-2 w-[25%]">姓名</th>
+                            <th class="border-2 border-black p-2 w-[40%]">簽名</th>
+                            <th class="border-2 border-black p-2 w-[20%]">備註</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pdf-observers-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Scripts -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, onSnapshot, updateDoc, addDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase Config
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'fengyuan-meeting-v1';
+        
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // State
+        let currentView = 'list';
+        let meetings = [];
+        let groups = [];
+        let currentMeeting = null;
+        let attendees = [];
+        let observers = [];
+        let user = null;
+        let signaturePad = null;
+        let activeSignPerson = null;
+
+        // Initialize UI
+        function init() {
+            lucide.createIcons();
+            initTimeSelect();
+            initSignaturePad();
+            bindEvents();
+            
+            // Auth
+            signInAnonymously(auth).catch(console.error);
+            onAuthStateChanged(auth, u => {
+                user = u;
+                if (u) {
+                    startListeners();
+                }
+            });
+        }
+
+        function initTimeSelect() {
+            const select = document.getElementById('m-time');
+            for (let h = 8; h <= 17; h++) {
+                const hour = h < 10 ? `0${h}` : h;
+                ['00', '30'].forEach(m => {
+                    const option = document.createElement('option');
+                    option.value = `${hour}:${m}`;
+                    option.textContent = `${hour}:${m}`;
+                    select.appendChild(option);
                 });
-                form.reset();
-              }} className="space-y-4">
-                <input name="name" required placeholder="群組名稱 (如：藥師、行政)" className="w-full p-4 rounded-2xl border bg-slate-50 outline-none" />
-                <textarea name="members" required placeholder="職稱-姓名 (例如: 主任-王大明, 組長-李小華)" className="w-full p-4 h-32 rounded-2xl border bg-slate-50 outline-none text-sm" />
-                <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700">儲存常用群組</button>
-              </form>
-            </div>
-            <div className="space-y-3">
-              {groups.map(g => (
-                <div key={g.id} className="bg-white p-4 rounded-2xl border flex justify-between items-center">
-                  <div className="flex-1">
-                    <h4 className="font-bold text-slate-800">{g.name} ({g.members?.length}人)</h4>
-                    <p className="text-xs text-slate-400 mt-1 truncate max-w-xs">{g.members?.join(', ')}</p>
-                  </div>
-                  <button onClick={() => removeGroup(g.id)} className="text-red-300 hover:text-red-500 p-2"><Trash2 size={18} /></button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+            }
+            const opt = document.createElement('option');
+            opt.value = "18:00"; opt.textContent = "18:00";
+            select.appendChild(opt);
+        }
 
-        {view === 'detail' && currentMeeting && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 relative">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                <div className="flex-1">
-                  <h2 className="text-2xl font-black text-slate-800">{currentMeeting.title}</h2>
-                  <div className="flex flex-wrap gap-4 mt-2 text-slate-500 text-sm">
-                    <span className="bg-slate-100 px-3 py-1 rounded-full font-bold">📅 {currentMeeting.date}</span>
-                    <span className="bg-slate-100 px-3 py-1 rounded-full">🕒 {currentMeeting.time}</span>
-                    <span className="bg-slate-100 px-3 py-1 rounded-full font-medium">📍 {currentMeeting.location}</span>
-                  </div>
-                  
-                  {/* Editable Chairman Field */}
-                  <div className="mt-4 flex items-center gap-2 group">
-                    <span className="text-slate-500 text-sm font-medium">主席/主持人：</span>
-                    {isEditingChairman ? (
-                      <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left duration-200">
-                        <input 
-                          type="text" 
-                          value={editChairmanValue} 
-                          onChange={(e) => setEditChairmanValue(e.target.value)}
-                          className="border rounded px-2 py-1 text-sm font-bold outline-none border-blue-400 shadow-sm"
-                          autoFocus
-                          placeholder="輸入姓名"
-                        />
-                        <button onClick={updateChairman} className="p-1.5 bg-emerald-500 text-white rounded shadow-sm hover:bg-emerald-600">
-                          <Check size={16} />
-                        </button>
-                        <button onClick={() => setIsEditingChairman(false)} className="p-1.5 bg-slate-200 text-slate-600 rounded shadow-sm hover:bg-slate-300">
-                          <X size={16} />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="font-bold text-slate-800">{currentMeeting.chairman || '(尚未設定)'}</span>
-                        <button 
-                          onClick={() => {
-                            setEditChairmanValue(currentMeeting.chairman || '');
-                            setIsEditingChairman(true);
-                          }}
-                          className="p-1 text-slate-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Edit3 size={14} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="flex gap-2 h-fit">
-                  <button onClick={() => setShowQrCode(true)} className="bg-slate-100 p-3 rounded-2xl hover:bg-slate-200 transition-colors"><QrCode size={20} /></button>
-                  <button onClick={() => setView('admin')} className="bg-slate-800 text-white px-5 py-2.5 rounded-2xl font-bold hover:bg-slate-900 transition-colors">管理名單</button>
-                </div>
-              </div>
+        function initSignaturePad() {
+            const canvas = document.getElementById('signature-canvas');
+            signaturePad = new SignaturePad(canvas, {
+                backgroundColor: 'rgb(255, 255, 255)',
+                penColor: 'rgb(0, 0, 0)',
+                minWidth: 2,
+                maxWidth: 5
+            });
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+        }
 
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-blue-50 p-5 rounded-3xl border border-blue-100 flex flex-col items-center">
-                  <p className="text-[10px] text-blue-600 font-black uppercase tracking-widest text-center">出席率</p>
-                  <p className="text-3xl font-black text-blue-900 mt-1">{attendanceRate}%</p>
-                </div>
-                <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex flex-col items-center">
-                  <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest text-center">實到 / 應到</p>
-                  <p className="text-3xl font-black text-emerald-900 mt-1">{signedCount} <span className="text-sm font-normal text-slate-400">/ {attendees.length}</span></p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <button onClick={exportToPDF} disabled={isExporting} className="bg-emerald-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center active:scale-95 disabled:opacity-50 transition-all text-sm shadow-md">
-                  {isExporting ? <Loader2 className="animate-spin mr-2" /> : <Download size={18} className="mr-2" />}
-                  匯出 PDF (豐原風格)
-                </button>
-                <button onClick={exportToExcel} className="bg-blue-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center active:scale-95 text-sm shadow-md">
-                  <FileSpreadsheet size={18} className="mr-2" />
-                  匯出 Excel
-                </button>
-              </div>
-            </div>
+        function resizeCanvas() {
+            const canvas = document.getElementById('signature-canvas');
+            const ratio = Math.max(window.devicePixelRatio || 1, 1);
+            canvas.width = canvas.offsetWidth * ratio;
+            canvas.height = canvas.offsetHeight * ratio;
+            canvas.getContext("2d").scale(ratio, ratio);
+            signaturePad.clear();
+        }
 
-            <div className="space-y-8">
-              <section className="space-y-4">
-                <h3 className="font-black text-slate-800 flex items-center px-2"><ClipboardList className="mr-2 text-blue-600" /> 出席名單 ({attendees.length})</h3>
-                <div className="grid gap-3">
-                  {attendees.sort((a, b) => a.name.localeCompare(b.name)).map(person => (
-                    <div key={person.id} className={`bg-white p-4 rounded-2xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${person.status === 'present' ? 'border-emerald-500 bg-emerald-50/20 shadow-inner' : 'border-slate-100 shadow-sm'}`}>
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${person.status === 'present' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'bg-slate-100 text-slate-400'}`}>
-                          {person.status === 'present' ? <CheckCircle2 size={22} /> : <User size={20} />}
+        // Listeners
+        function startListeners() {
+            // Meetings
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'meetings'), snapshot => {
+                meetings = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                renderMeetings();
+                document.getElementById('loading-view').classList.add('hidden-view');
+                showView(currentView);
+
+                // Handle direct URL check-in
+                const params = new URLSearchParams(window.location.search);
+                const mid = params.get('m');
+                if (mid && !currentMeeting) {
+                    const m = meetings.find(x => x.id === mid);
+                    if (m) openMeetingDetail(m);
+                }
+            });
+
+            // Groups
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'groups'), snapshot => {
+                groups = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                renderGroups();
+            });
+        }
+
+        function startMeetingDetailListeners(meetingId) {
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', `attendees_${meetingId}`), snapshot => {
+                attendees = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                renderAttendees();
+                updateStats();
+            });
+
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', `observers_${meetingId}`), snapshot => {
+                observers = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                renderObservers();
+            });
+
+            onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'meetings', meetingId), doc => {
+                if (doc.exists()) {
+                    currentMeeting = { id: doc.id, ...doc.data() };
+                    updateDetailHeader();
+                }
+            });
+        }
+
+        // Rendering Functions
+        function showView(viewName) {
+            currentView = viewName;
+            document.querySelectorAll('main > div').forEach(div => div.classList.add('hidden-view'));
+            document.getElementById(`${viewName}-view`).classList.remove('hidden-view');
+            
+            document.getElementById('back-btn').classList.toggle('hidden', viewName === 'list');
+            document.getElementById('header-actions').classList.toggle('hidden', viewName !== 'list');
+            lucide.createIcons();
+        }
+
+        function renderMeetings() {
+            const container = document.getElementById('meetings-container');
+            container.innerHTML = meetings.length === 0 ? '<div class="text-center py-20 text-slate-400">目前無會議資料</div>' : '';
+            meetings.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).forEach(m => {
+                const div = document.createElement('div');
+                div.className = "bg-white rounded-2xl shadow-sm border p-5 flex items-center justify-between cursor-pointer hover:border-blue-400 transition-all";
+                div.innerHTML = `
+                    <div class="flex-1">
+                        <h3 class="font-bold text-lg text-slate-800">${m.title}</h3>
+                        <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500 mt-2">
+                            <span class="text-blue-600">📅 ${m.date}</span>
+                            <span>📍 ${m.location}</span>
+                        </div>
+                    </div>
+                    <i data-lucide="chevron-right" class="text-slate-300"></i>
+                `;
+                div.onclick = () => openMeetingDetail(m);
+                container.appendChild(div);
+            });
+            lucide.createIcons();
+        }
+
+        function openMeetingDetail(meeting) {
+            currentMeeting = meeting;
+            startMeetingDetailListeners(meeting.id);
+            showView('detail');
+        }
+
+        function updateDetailHeader() {
+            document.getElementById('detail-title').textContent = currentMeeting.title;
+            document.getElementById('detail-date').textContent = currentMeeting.date;
+            document.getElementById('detail-time').textContent = currentMeeting.time;
+            document.getElementById('detail-location').textContent = currentMeeting.location;
+            document.getElementById('detail-chairman').textContent = currentMeeting.chairman || '(未設定)';
+        }
+
+        function renderAttendees() {
+            const container = document.getElementById('attendees-container');
+            container.innerHTML = '';
+            attendees.sort((a, b) => a.name.localeCompare(b.name)).forEach(p => {
+                const div = document.createElement('div');
+                const isSigned = p.status === 'present';
+                div.className = `bg-white p-4 rounded-2xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isSigned ? 'border-emerald-500 bg-emerald-50/20' : 'border-slate-100 shadow-sm'}`;
+                
+                let signArea = '';
+                if (isSigned) {
+                    signArea = `<img src="${p.signature}" class="h-10 w-24 object-contain">`;
+                } else {
+                    signArea = `
+                        <div class="flex gap-2">
+                            <button class="bg-blue-600 text-white px-5 py-2 rounded-xl font-bold text-sm" onclick="openSignatureModal('attendee', '${p.id}')">簽名</button>
+                            <select class="text-xs border rounded-lg p-2 font-bold" onchange="window.updateAttendeeStatus('${p.id}', this.value)">
+                                <option value="none">-- 備註 --</option>
+                                <option value="duty" ${p.status === 'duty' ? 'selected' : ''}>值班</option>
+                                <option value="vacation" ${p.status === 'vacation' ? 'selected' : ''}>休假</option>
+                                <option value="leave" ${p.status === 'leave' ? 'selected' : ''}>請假</option>
+                            </select>
+                        </div>
+                    `;
+                }
+
+                div.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center ${isSigned ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'}">
+                            <i data-lucide="${isSigned ? 'check-circle-2' : 'user'}"></i>
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded tracking-wide">{person.title}</span>
-                            <p className="font-bold text-slate-800 text-lg">{person.name}</p>
-                          </div>
-                          {person.status !== 'none' && person.status !== 'present' && (
-                            <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded italic">狀態：{person.status === 'duty' ? '值班' : person.status === 'vacation' ? '休假' : '請假'}</span>
-                          )}
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-bold">${p.title}</span>
+                                <p class="font-bold text-slate-800 text-lg">${p.name}</p>
+                            </div>
+                            ${p.status !== 'none' && p.status !== 'present' ? `<span class="text-xs font-bold text-red-500 italic">狀態：${p.status === 'duty' ? '值班' : p.status === 'vacation' ? '休假' : '請假'}</span>` : ''}
                         </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {person.status === 'present' ? (
-                          <img src={person.signature} alt="sign" className="h-10 w-24 object-contain filter drop-shadow-sm" />
-                        ) : (
-                          <>
-                            <button onClick={() => setShowSignPad({ type: 'attendee', data: person })} className="flex-1 sm:flex-none bg-blue-600 text-white px-5 py-2 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all">簽名</button>
-                            <select 
-                              className="text-xs border rounded-lg p-2 bg-slate-50 font-bold outline-none cursor-pointer hover:bg-slate-100 transition-colors"
-                              value={person.status}
-                              onChange={(e) => updateAttendeeStatus(person.id, e.target.value)}
-                            >
-                              <option value="none">-- 備註 --</option>
-                              <option value="duty">值班</option>
-                              <option value="vacation">休假</option>
-                              <option value="leave">請假</option>
-                            </select>
-                          </>
-                        )}
-                      </div>
                     </div>
-                  ))}
-                </div>
-              </section>
+                    ${signArea}
+                `;
+                container.appendChild(div);
+            });
+            lucide.createIcons();
+        }
 
-              <section className="space-y-4">
-                <div className="flex items-center justify-between px-2">
-                  <h3 className="font-black text-slate-800 flex items-center"><Plus className="mr-2 text-orange-500" /> 列席人員 ({observers.length})</h3>
-                  <button onClick={() => setShowSignPad({ type: 'observer', data: null })} className="bg-orange-100 text-orange-600 text-sm font-bold px-4 py-1.5 rounded-full hover:bg-orange-200 transition-colors">臨時加入</button>
-                </div>
-                {observers.map(o => (
-                  <div key={o.id} className="bg-white p-4 rounded-2xl border-2 border-orange-100 flex items-center justify-between shadow-sm">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 text-[10px] font-black flex items-center justify-center">列席</div>
-                      <p className="font-bold text-slate-800">{o.name} <span className="text-xs text-slate-400 font-normal">({o.department})</span></p>
+        function renderObservers() {
+            const container = document.getElementById('observers-container');
+            container.innerHTML = observers.length === 0 ? '<div class="text-center py-6 text-slate-400 italic text-sm">暫無列席</div>' : '';
+            observers.forEach(o => {
+                const div = document.createElement('div');
+                div.className = "bg-white p-4 rounded-2xl border-2 border-orange-100 flex items-center justify-between shadow-sm";
+                div.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-full bg-orange-100 text-orange-600 text-xs font-black flex items-center justify-center">列席</div>
+                        <p class="font-bold text-slate-800">${o.name} <span class="text-xs text-slate-400 font-normal">(${o.department})</span></p>
                     </div>
-                    <img src={o.signature} alt="sign" className="h-10 w-24 object-contain filter drop-shadow-sm" />
-                  </div>
-                ))}
-              </section>
-            </div>
-          </div>
-        )}
+                    <img src="${o.signature}" class="h-10 w-24 object-contain">
+                `;
+                container.appendChild(div);
+            });
+        }
 
-        {view === 'admin' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between px-2">
-              <h2 className="text-xl font-black">編輯出席名單</h2>
-              <button onClick={() => setView('detail')} className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl font-bold">完成設定</button>
-            </div>
-            <div className="bg-blue-50 p-5 rounded-3xl border-2 border-dashed border-blue-200">
-              <h4 className="text-xs font-bold text-blue-500 mb-3 flex items-center uppercase tracking-widest"><Users size={14} className="mr-2" /> 從常用群組匯入</h4>
-              <div className="flex flex-wrap gap-2">
-                {groups.map(g => (
-                  <button key={g.id} onClick={() => addAttendeesBatch(g.members.join(','))} className="bg-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm border hover:border-blue-500 transition-all">+ {g.name}</button>
-                ))}
-              </div>
-            </div>
-            <form onSubmit={(e) => { e.preventDefault(); addAttendeesBatch(e.target.names.value); e.target.reset(); }} className="bg-white p-5 rounded-3xl border space-y-4 shadow-sm">
-              <label className="block text-sm font-bold text-slate-600">手動輸入人員 (職稱-姓名, 以逗點或換行區隔)</label>
-              <textarea name="names" placeholder="例如：主任-王大明, 藥師-李小華, 張三" className="w-full p-4 h-24 rounded-2xl border bg-slate-50 outline-none text-sm" required />
-              <button className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700 transition-colors">批次加入</button>
-            </form>
-            <div className="bg-white rounded-3xl border overflow-hidden">
-              <div className="bg-slate-50 p-3 text-xs font-bold text-slate-400 border-b uppercase tracking-wider">目前會議名單 ({attendees.length}人)</div>
-              {attendees.map(p => (
-                <div key={p.id} className="p-3 border-b last:border-0 flex justify-between items-center group">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-bold uppercase">{p.title}</span>
-                    <span className="font-bold text-slate-700">{p.name}</span>
-                  </div>
-                  <button onClick={() => removeAttendee(p.id)} className="text-red-300 hover:text-red-600 p-1 transition-colors"><Trash2 size={16} /></button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </main>
+        function updateStats() {
+            const count = attendees.filter(a => a.status === 'present').length;
+            const rate = attendees.length > 0 ? Math.round((count / attendees.length) * 100) : 0;
+            document.getElementById('stat-rate').textContent = `${rate}%`;
+            document.getElementById('stat-count').textContent = `${count} / ${attendees.length}`;
+        }
 
-      {isAddingMeeting && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full h-full sm:h-auto max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in duration-200 overflow-y-auto">
-            <h2 className="text-2xl font-black mb-6">建立新會議</h2>
-            <form onSubmit={addMeeting} className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">會議主題</label>
-                <input name="title" required className="w-full p-4 rounded-2xl border bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" placeholder="例如: 藥劑科115年度會議" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">日期</label>
-                  <input name="date" type="date" required className="w-full p-4 rounded-2xl border bg-slate-50 outline-none" defaultValue={new Date().toISOString().split('T')[0]} />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">時間</label>
-                  <select name="time" required className="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold">
-                    {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">主席/主持人</label>
-                <input name="chairman" className="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold focus:ring-2 focus:ring-blue-500" placeholder="輸入姓名 (可留空)" />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">地點</label>
-                <input name="location" required className="w-full p-4 rounded-2xl border bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" defaultValue="藥劑科會議室" />
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setIsAddingMeeting(false)} className="flex-1 py-4 border-2 rounded-2xl font-bold text-slate-400">取消</button>
-                <button type="submit" className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl active:scale-95 transition-all">建立會議</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+        //簽名功能暴露到全域
+        window.updateAttendeeStatus = async (id, status) => {
+            const ref = doc(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`, id);
+            await updateDoc(ref, { status, signed: status === 'present', signature: null });
+        };
 
-      {showQrCode && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowQrCode(false)}>
-          <div className="bg-white p-8 rounded-[3rem] text-center max-w-sm w-full animate-in zoom-in duration-300 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-black mb-2 text-slate-800">{currentMeeting.title}</h3>
-            <p className="text-sm text-slate-400 mb-6 font-bold">掃描 QR Code 開啟簽到頁面</p>
-            <div className="bg-white p-4 border-8 border-slate-50 rounded-3xl inline-block mb-6 shadow-inner">
-              <img src={qrCodeUrl} alt="QR Code" className="w-64 h-64 mx-auto" />
-            </div>
-            <button onClick={() => setShowQrCode(false)} className="w-full bg-slate-100 py-4 rounded-2xl font-bold text-slate-600 hover:bg-slate-200 transition-colors">關閉視窗</button>
-          </div>
-        </div>
-      )}
-
-      {showSignPad && (
-        <SignPadModal 
-          mode={showSignPad.type}
-          person={showSignPad.data} 
-          onClose={() => setShowSignPad(null)} 
-          onSave={(data, extra) => saveSignature(showSignPad.type, showSignPad.data?.id, data, extra)}
-        />
-      )}
-
-      {/* Hidden PDF Export Area (Fengyuan Style) */}
-      <div className="fixed -left-[4000px] top-0">
-        <div id="pdf-content" className="w-[850px] bg-white p-16 font-serif">
-          <div className="text-center mb-10">
-            <h1 className="text-3xl font-bold tracking-widest border-b-2 border-black pb-2 inline-block">衛生福利部豐原醫院</h1>
-            <h2 className="text-2xl font-bold mt-4">{currentMeeting?.title} 簽到單</h2>
+        window.openSignatureModal = (type, personId) => {
+            activeSignPerson = { type, id: personId };
+            const modal = document.getElementById('signature-modal');
+            const obsFields = document.getElementById('sig-observer-fields');
+            const sigInfo = document.getElementById('sig-info');
             
-            <div className="mt-8 text-left space-y-2 text-lg font-bold">
-              <p>時間：{currentMeeting?.date} {currentMeeting?.time}</p>
-              <p>地點：{currentMeeting?.location}</p>
-              <p>主席/主持人：{currentMeeting?.chairman || '(未設定)'}</p>
-            </div>
-          </div>
-          
-          <div className="text-lg font-bold mb-2">出列席人員：</div>
-          <table className="w-full border-collapse border-2 border-black text-center text-lg">
-            <thead>
-              <tr className="bg-slate-50 h-14">
-                <th className="border-2 border-black p-2 w-[15%]">職 稱</th>
-                <th className="border-2 border-black p-2 w-[25%]">姓 名</th>
-                <th className="border-2 border-black p-2 w-[40%]">簽 名</th>
-                <th className="border-2 border-black p-2 w-[20%]">備 註</th>
-              </tr>
-            </thead>
-            <tbody>
-              {attendees.sort((a,b) => a.name.localeCompare(b.name)).map((p, idx) => (
-                <tr key={p.id} className="h-20">
-                  <td className="border-2 border-black p-2">{p.title}</td>
-                  <td className="border-2 border-black p-2 font-bold">{p.name}</td>
-                  <td className="border-2 border-black p-2">
-                    {p.status === 'present' && p.signature ? <img src={p.signature} alt="sign" className="h-14 mx-auto" /> : ''}
-                  </td>
-                  <td className="border-2 border-black p-2 text-base">
-                    {p.status !== 'present' && p.status !== 'none' ? (p.status === 'duty' ? '值班' : p.status === 'vacation' ? '休假' : '請假') : ''}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            signaturePad.clear();
+            modal.classList.remove('hidden-view');
+            
+            if (type === 'attendee') {
+                const person = attendees.find(a => a.id === personId);
+                document.getElementById('sig-name').textContent = person.name;
+                obsFields.classList.add('hidden-view');
+                sigInfo.classList.remove('hidden-view');
+            } else {
+                sigInfo.classList.add('hidden-view');
+                obsFields.classList.remove('hidden-view');
+            }
+            resizeCanvas();
+        };
 
-          <div className="mt-6 text-lg font-bold border-t-2 border-black pt-4">
-            出席率：{attendanceRate}% ({signedCount}/{attendees.length})
-            <p className="text-sm font-normal text-slate-500">(實際出席人數/應出席人數*100%)</p>
-          </div>
+        // Actions
+        async function handleAddMeeting() {
+            const title = document.getElementById('m-title').value;
+            const date = document.getElementById('m-date').value;
+            const time = document.getElementById('m-time').value;
+            const chairman = document.getElementById('m-chairman').value;
+            const location = document.getElementById('m-location').value;
+            
+            if (!title || !date) return alert('請填寫完整資訊');
 
-          {observers.length > 0 && (
-            <div className="mt-10">
-              <div className="text-lg font-bold mb-2">列席人員：</div>
-              <table className="w-full border-collapse border-2 border-black text-center text-lg">
-                <thead>
-                  <tr className="bg-slate-50 h-12">
-                    <th className="border-2 border-black p-2 w-[15%]">職稱</th>
-                    <th className="border-2 border-black p-2 w-[25%]">姓名</th>
-                    <th className="border-2 border-black p-2 w-[40%]">簽名</th>
-                    <th className="border-2 border-black p-2 w-[20%]">備註</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {observers.map(o => (
-                    <tr key={o.id} className="h-20">
-                      <td className="border-2 border-black p-2">列席</td>
-                      <td className="border-2 border-black p-2">{o.name}</td>
-                      <td className="border-2 border-black p-2">
-                        <img src={o.signature} alt="sign" className="h-14 mx-auto" />
-                      </td>
-                      <td className="border-2 border-black p-2 text-sm">{o.department}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          
-          <div className="mt-20 text-right text-sm text-slate-400">
-            檔案識別碼：{currentMeeting?.id} | 列印日期：{new Date().toLocaleDateString()}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'meetings'), {
+                title, date, time, chairman, location, createdAt: serverTimestamp()
+            });
+            document.getElementById('add-meeting-modal').classList.add('hidden-view');
+        }
 
-// Signature Modal
-function SignPadModal({ mode, person, onClose, onSave }) {
-  const canvasRef = useRef(null);
-  const padRef = useRef(null);
-  const [formData, setFormData] = useState({ name: '', department: '' });
+        async function handleBatchAdd() {
+            const input = document.getElementById('batch-names-input').value;
+            if (!input || !currentMeeting) return;
+            const names = input.split(/[,，\n]/).map(n => n.trim()).filter(n => n);
+            for (const n of names) {
+                let title = '藥師', name = n;
+                if (n.includes('-')) [title, name] = n.split('-');
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`), {
+                    title, name, signed: false, status: 'none', signature: null, signedAt: null
+                });
+            }
+            document.getElementById('batch-names-input').value = '';
+        }
 
-  useEffect(() => {
-    if (canvasRef.current && window.SignaturePad) {
-      const canvas = canvasRef.current;
-      const ratio = Math.max(window.devicePixelRatio || 1, 1);
-      canvas.width = canvas.offsetWidth * ratio;
-      canvas.height = canvas.offsetHeight * ratio;
-      canvas.getContext("2d").scale(ratio, ratio);
+        async function handleSaveSignature() {
+            if (signaturePad.isEmpty()) return alert('請先簽名');
+            const dataUrl = signaturePad.toDataURL();
+            
+            if (activeSignPerson.type === 'attendee') {
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`, activeSignPerson.id);
+                await updateDoc(ref, {
+                    signed: true, status: 'present', signature: dataUrl, signedAt: new Date().toISOString()
+                });
+            } else {
+                const name = document.getElementById('sig-obs-name').value;
+                const dept = document.getElementById('sig-obs-dept').value;
+                if (!name || !dept) return alert('請填寫姓名與單位');
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `observers_${currentMeeting.id}`), {
+                    name, department: dept, signature: dataUrl, signedAt: new Date().toISOString()
+                });
+            }
+            document.getElementById('signature-modal').classList.add('hidden-view');
+        }
 
-      padRef.current = new window.SignaturePad(canvas, {
-        backgroundColor: 'rgb(255, 255, 255)',
-        penColor: 'rgb(0, 0, 0)',
-        minWidth: 2,
-        maxWidth: 5
-      });
-    }
-  }, []);
+        // Export PDF
+        async function handlePDFExport() {
+            const btn = document.getElementById('pdf-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="animate-spin mr-2" data-lucide="loader-2"></i> 處理中...';
+            lucide.createIcons();
 
-  const handleSave = () => {
-    if (padRef.current && !padRef.current.isEmpty()) {
-      if (mode === 'observer' && (!formData.name || !formData.department)) return;
-      onSave(padRef.current.toDataURL(), formData);
-    }
-  };
+            try {
+                // Populate PDF Hidden Area
+                document.getElementById('pdf-m-title').textContent = currentMeeting.title;
+                document.getElementById('pdf-m-time').textContent = `時間：${currentMeeting.date} ${currentMeeting.time}`;
+                document.getElementById('pdf-m-location').textContent = `地點：${currentMeeting.location}`;
+                document.getElementById('pdf-m-chairman').textContent = `主席/主持人：${currentMeeting.chairman || '(未設定)'}`;
+                
+                const count = attendees.filter(a => a.status === 'present').length;
+                const rate = attendees.length > 0 ? Math.round((count / attendees.length) * 100) : 0;
+                document.getElementById('pdf-stats').innerHTML = `出席率：${rate}% (${count}/${attendees.length})<p class="text-sm font-normal text-slate-500">(實際出席人數/應出席人數*100%)</p>`;
 
-  return (
-    <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-0 md:p-4">
-      <div className="bg-white w-full h-full md:h-auto md:max-w-xl md:rounded-[3rem] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-        <div className="p-6 border-b flex justify-between items-center bg-slate-50 shadow-sm">
-          <div className="flex-1">
-            <h2 className="text-2xl font-black text-slate-800">{mode === 'attendee' ? '簽名簽到' : '列席簽到'}</h2>
-            <p className="text-sm text-slate-500 mt-1">
-              {mode === 'attendee' ? (
-                <><span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-bold mr-2 text-xs">{person.title}</span><span className="text-slate-900 font-black text-xl underline">{person.name}</span></>
-              ) : (
-                '請填寫資訊並手寫簽名'
-              )}
-            </p>
-          </div>
-          <button onClick={onClose} className="p-3 bg-white border shadow-sm rounded-full hover:bg-slate-50 transition-colors active:scale-90"><X size={24} /></button>
-        </div>
-        <div className="flex-1 bg-slate-100 p-6 space-y-4 flex flex-col">
-          {mode === 'observer' && (
-            <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-top duration-300 mb-2">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 ml-1 uppercase">您的姓名</label>
-                <input placeholder="輸入姓名" className="w-full p-4 rounded-2xl border-2 border-white focus:border-blue-500 outline-none font-bold shadow-sm" onChange={e => setFormData({...formData, name: e.target.value})} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 ml-1 uppercase">單位名稱</label>
-                <input placeholder="輸入單位" className="w-full p-4 rounded-2xl border-2 border-white focus:border-blue-500 outline-none font-bold shadow-sm" onChange={e => setFormData({...formData, department: e.target.value})} />
-              </div>
-            </div>
-          )}
-          <div className="flex-1 min-h-[300px] sm:min-h-[350px] bg-white rounded-[2.5rem] border-4 border-dashed border-slate-200 relative overflow-hidden shadow-inner flex flex-col">
-            <canvas ref={canvasRef} className="flex-1 w-full cursor-crosshair touch-none" />
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-5 select-none">
-              <span className="text-6xl font-black rotate-[-15deg]">SIGN HERE</span>
-            </div>
-          </div>
-        </div>
-        <div className="p-6 bg-white border-t flex gap-4">
-          <button onClick={() => padRef.current.clear()} className="flex-1 py-4 border-2 rounded-2xl font-black text-slate-400 hover:bg-slate-50 transition-colors">清除重簽</button>
-          <button onClick={handleSave} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-2 shadow-lg hover:bg-blue-700 active:scale-95 transition-all">
-            <Save size={24} /> 確認簽到
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+                const tbody = document.getElementById('pdf-attendees-body');
+                tbody.innerHTML = '';
+                attendees.sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
+                    const tr = document.createElement('tr');
+                    tr.className = "h-20";
+                    let note = '';
+                    if (p.status !== 'present' && p.status !== 'none') {
+                        note = p.status === 'duty' ? '值班' : (p.status === 'vacation' ? '休假' : '請假');
+                    }
+                    tr.innerHTML = `
+                        <td class="border-2 border-black p-2">${p.title}</td>
+                        <td class="border-2 border-black p-2 font-bold">${p.name}</td>
+                        <td class="border-2 border-black p-2">${p.signature ? `<img src="${p.signature}" class="h-14 mx-auto">` : ''}</td>
+                        <td class="border-2 border-black p-2">${note}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                if (observers.length > 0) {
+                    document.getElementById('pdf-observers-section').classList.remove('hidden-view');
+                    const oBody = document.getElementById('pdf-observers-body');
+                    oBody.innerHTML = '';
+                    observers.forEach(o => {
+                        const tr = document.createElement('tr');
+                        tr.className = "h-20";
+                        tr.innerHTML = `
+                            <td class="border-2 border-black p-2">列席</td>
+                            <td class="border-2 border-black p-2">${o.name}</td>
+                            <td class="border-2 border-black p-2"><img src="${o.signature}" class="h-14 mx-auto"></td>
+                            <td class="border-2 border-black p-2 text-sm">${o.department}</td>
+                        `;
+                        oBody.appendChild(tr);
+                    });
+                } else {
+                    document.getElementById('pdf-observers-section').classList.add('hidden-view');
+                }
+
+                const element = document.getElementById('pdf-content');
+                const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, pdfHeight);
+                pdf.save(`${currentMeeting.title}_簽到單.pdf`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="download" class="mr-2" size="18"></i> 匯出 PDF';
+                lucide.createIcons();
+            }
+        }
+
+        // Bind Events
+        function bindEvents() {
+            document.getElementById('back-btn').onclick = () => showView('list');
+            document.getElementById('nav-groups-btn').onclick = () => showView('groups');
+            document.getElementById('nav-admin-btn').onclick = () => {
+                showView('admin');
+                renderAdminImportGroups();
+                renderAdminList();
+            };
+            document.getElementById('admin-done-btn').onclick = () => showView('detail');
+            document.getElementById('open-add-meeting-btn').onclick = () => document.getElementById('add-meeting-modal').classList.remove('hidden-view');
+            document.getElementById('close-add-modal-btn').onclick = () => document.getElementById('add-meeting-modal').classList.add('hidden-view');
+            document.getElementById('confirm-add-meeting-btn').onclick = handleAddMeeting;
+            
+            document.getElementById('batch-add-btn').onclick = handleBatchAdd;
+            document.getElementById('guest-sign-btn').onclick = () => openSignatureModal('observer', null);
+            document.getElementById('close-sig-modal-btn').onclick = () => document.getElementById('signature-modal').classList.add('hidden-view');
+            document.getElementById('clear-sig-btn').onclick = () => signaturePad.clear();
+            document.getElementById('save-sig-btn').onclick = handleSaveSignature;
+            
+            document.getElementById('show-qr-btn').onclick = () => {
+                const url = window.location.origin + window.location.pathname + `?m=${currentMeeting.id}`;
+                document.getElementById('qr-image').src = `https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl=${encodeURIComponent(url)}`;
+                document.getElementById('qr-meeting-title').textContent = currentMeeting.title;
+                document.getElementById('qr-modal').classList.remove('hidden-view');
+            };
+            document.getElementById('close-qr-modal-btn').onclick = () => document.getElementById('qr-modal').classList.add('hidden-view');
+            
+            document.getElementById('pdf-btn').onclick = handlePDFExport;
+            document.getElementById('excel-btn').onclick = () => exportToExcel();
+            
+            document.getElementById('edit-chairman-btn').onclick = async () => {
+                const name = prompt('請輸入新的主席/主持人姓名：', currentMeeting.chairman);
+                if (name !== null) {
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'meetings', currentMeeting.id), { chairman: name });
+                }
+            };
+
+            document.getElementById('save-group-btn').onclick = async () => {
+                const name = document.getElementById('new-group-name').value;
+                const members = document.getElementById('new-group-members').value.split(/[,，\n]/).map(n => n.trim()).filter(n => n);
+                if (!name || members.length === 0) return alert('請填寫完整');
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'groups'), {
+                    name, members, createdAt: serverTimestamp()
+                });
+                document.getElementById('new-group-name').value = '';
+                document.getElementById('new-group-members').value = '';
+            };
+        }
+
+        function renderAdminImportGroups() {
+            const container = document.getElementById('group-import-container');
+            container.innerHTML = groups.length === 0 ? '<p class="text-xs text-slate-400">目前無設定群組</p>' : '';
+            groups.forEach(g => {
+                const btn = document.createElement('button');
+                btn.className = "bg-white border text-slate-700 px-3 py-1.5 rounded-xl text-sm font-bold shadow-sm hover:border-blue-500 hover:text-blue-600";
+                btn.textContent = `+ ${g.name} (${g.members.length})`;
+                btn.onclick = async () => {
+                    for (const raw of g.members) {
+                        let title = '藥師', name = raw;
+                        if (raw.includes('-')) [title, name] = raw.split('-');
+                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`), {
+                            title, name, signed: false, status: 'none', signature: null, signedAt: null
+                        });
+                    }
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        function renderAdminList() {
+            const container = document.getElementById('admin-attendees-list');
+            document.getElementById('admin-list-count').textContent = `目前名單 (${attendees.length}人)`;
+            container.innerHTML = '';
+            attendees.sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
+                const div = document.createElement('div');
+                div.className = "p-3 border-b last:border-0 flex justify-between items-center";
+                div.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-bold">${p.title}</span>
+                        <span class="font-bold text-slate-700">${p.name}</span>
+                    </div>
+                    <button class="text-red-300 hover:text-red-500 p-1" onclick="window.deleteAttendee('${p.id}')">
+                        <i data-lucide="trash-2" size="16"></i>
+                    </button>
+                `;
+                container.appendChild(div);
+            });
+            lucide.createIcons();
+        }
+
+        window.deleteAttendee = async (id) => {
+            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `attendees_${currentMeeting.id}`, id));
+        };
+
+        function renderGroups() {
+            const container = document.getElementById('groups-container');
+            container.innerHTML = '';
+            groups.forEach(g => {
+                const div = document.createElement('div');
+                div.className = "bg-white p-4 rounded-2xl border flex justify-between items-center";
+                div.innerHTML = `
+                    <div class="flex-1">
+                        <h4 class="font-bold text-slate-800">${g.name} (${g.members?.length}人)</h4>
+                        <p class="text-xs text-slate-400 mt-1 truncate max-w-xs">${g.members?.join(', ')}</p>
+                    </div>
+                    <button class="text-red-300 hover:text-red-500 p-2" onclick="window.deleteGroup('${g.id}')"><i data-lucide="trash-2" size="18"></i></button>
+                `;
+                container.appendChild(div);
+            });
+            lucide.createIcons();
+        }
+
+        window.deleteGroup = async (id) => {
+            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', id));
+        };
+
+        function exportToExcel() {
+            const rows = [
+                ["衛生福利部豐原醫院藥劑科 簽到單"],
+                ["會議主題", currentMeeting.title],
+                ["日期", currentMeeting.date, "時間", currentMeeting.time, "地點", currentMeeting.location],
+                ["主席", currentMeeting.chairman],
+                [],
+                ["出席人員"],
+                ["職稱", "姓名", "出席狀態", "備註/簽到時間"]
+            ];
+            attendees.forEach(p => {
+                let status = p.status === 'present' ? "出席" : (p.status === 'duty' ? "值班" : (p.status === 'vacation' ? "休假" : (p.status === 'leave' ? "請假" : "未簽到")));
+                rows.push([p.title, p.name, status, p.signedAt ? new Date(p.signedAt).toLocaleTimeString() : ""]);
+            });
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "簽到表");
+            XLSX.writeFile(wb, `${currentMeeting.title}.xlsx`);
+        }
+
+        // Start
+        window.onload = init;
+    </script>
+</body>
+</html>

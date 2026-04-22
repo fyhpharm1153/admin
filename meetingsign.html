@@ -23,7 +23,7 @@
             overscroll-behavior-y: contain;
         }
 
-        /* 簽名板與彈窗優化 */
+        /* 簽名板防跳動與鎖定背景 */
         #signature-modal {
             touch-action: none;
             overscroll-behavior: none;
@@ -44,8 +44,8 @@
             touch-action: none !important;
             cursor: crosshair;
             background-color: #ffffff;
-            width: 100%;
-            height: 100%;
+            width: 100% !important;
+            height: 100% !important;
             display: block;
             -webkit-touch-callout: none;
         }
@@ -217,7 +217,7 @@
                 <div id="reg-success" class="hidden py-10 animate-in fade-in">
                     <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4"><i data-lucide="check" size="32"></i></div>
                     <h3 class="text-2xl font-black text-slate-800 mb-2">報名成功！</h3>
-                    <p class="text-slate-500 font-bold">您已完成報名，開會當天請記得回來簽到。</p>
+                    <p class="text-slate-500 font-bold">您已完成報名，資料已同步至活動名單。</p>
                     <button onclick="location.reload()" class="mt-6 text-blue-600 font-black underline decoration-blue-200">確定</button>
                 </div>
             </div>
@@ -302,7 +302,7 @@
             <div class="portrait-warning absolute inset-0 z-[70] bg-blue-900 text-white flex-col items-center justify-center p-10 text-center hidden">
                 <div class="animate-bounce mb-6"><i data-lucide="rotate-cw" size="64"></i></div>
                 <h3 class="text-3xl font-black mb-4 tracking-tighter">請旋轉手機</h3>
-                <p class="text-lg opacity-80 font-bold">為了確保簽名品質，請將手機轉為橫向。</p>
+                <p class="text-lg opacity-80 font-bold">為了確保簽名品質與縮放正確，請將手機轉為橫向。</p>
                 <button id="close-sig-warning-btn" class="mt-10 px-8 py-3 border-2 border-white/30 rounded-full font-black">取消</button>
             </div>
 
@@ -323,7 +323,7 @@
                 </div>
 
                 <div class="sig-body p-4 flex-1 flex flex-col min-h-0">
-                    <div id="canvas-wrapper" class="flex-1 bg-white rounded-[2rem] border-4 border-dashed border-slate-200 relative overflow-hidden flex flex-col shadow-inner">
+                    <div id="canvas-wrapper" class="flex-1 bg-white rounded-[2rem] border-4 border-dashed border-slate-200 relative overflow-hidden flex flex-col shadow-inner select-none">
                         <canvas id="signature-canvas" class="signature-pad-canvas"></canvas>
                         <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] select-none font-black text-8xl">SIGN</div>
                     </div>
@@ -439,7 +439,14 @@
 
         function initSignaturePad() {
             const canvas = document.getElementById('signature-canvas');
-            signaturePad = new SignaturePad(canvas, { backgroundColor: 'rgb(255, 255, 255)', penColor: 'rgb(0, 0, 0)', minWidth: 2.8, maxWidth: 6.0 });
+            // 初始化 SignaturePad
+            signaturePad = new SignaturePad(canvas, { 
+                backgroundColor: 'rgb(255, 255, 255)', 
+                penColor: 'rgb(0, 0, 0)', 
+                minWidth: 2.5, 
+                maxWidth: 5.0,
+                throttle: 16
+            });
         }
 
         function calibrateCanvas() {
@@ -447,12 +454,22 @@
             const canvas = document.getElementById('signature-canvas');
             const wrapper = document.getElementById('canvas-wrapper');
             if (!wrapper) return;
+
+            // 取得當前 CSS 顯示尺寸
+            const width = wrapper.clientWidth;
+            const height = wrapper.clientHeight;
+            
+            // 處理座標偏移的核心：同步屬性尺寸與 CSS 尺寸，並考慮像素比
             const ratio = Math.max(window.devicePixelRatio || 1, 1);
-            canvas.width = wrapper.offsetWidth * ratio;
-            canvas.height = wrapper.offsetHeight * ratio;
+            canvas.width = width * ratio;
+            canvas.height = height * ratio;
+            
             const ctx = canvas.getContext("2d");
-            ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.scale(ratio, ratio);
-            signaturePad.clear();
+            // 重置所有轉換並重新縮放，確保手勢座標 1:1
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.scale(ratio, ratio);
+            
+            signaturePad.clear(); // 清除畫布並重置內部緩衝
         }
 
         function startListeners() {
@@ -552,11 +569,11 @@
                 let action = ok ? 
                     `<div class="flex items-center gap-2"><img src="${p.signature}" class="h-12 w-32 object-contain bg-white rounded-lg p-1 border shadow-inner"><div class="flex flex-col gap-1"><button class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-[10px] font-black" onclick="window.openSignPopup('attendee', '${p.id}')">重簽</button><button class="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-[10px] font-black" onclick="window.cancelSign('${p.id}')">取消</button></div></div>` : 
                     `<div class="flex gap-2">
-                        <button class="bg-blue-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-lg active:scale-95" onclick="window.openSignPopup('attendee', '${p.id}')">簽名</button>
+                        <button class="bg-blue-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-lg active:scale-95 transition-all" onclick="window.openSignPopup('attendee', '${p.id}')">簽名</button>
                         <select class="text-xs border-2 rounded-2xl px-2 bg-slate-50 font-black outline-none" onchange="window.setS('${p.id}', this.value)">
                             <option value="none">-- 備註 --</option><option value="duty" ${p.status==='duty'?'selected':''}>值班</option><option value="vacation" ${p.status==='vacation'?'selected':''}>休假</option><option value="leave" ${p.status==='leave'?'selected':''}>請假</option>
                         </select>
-                        <button onclick="window.delRegistration('${p.id}')" class="text-red-300 hover:text-red-500 p-2" title="取消報名"><i data-lucide="user-minus" size="18"></i></button>
+                        <button onclick="window.delRegistration('${p.id}')" class="text-red-300 hover:text-red-500 p-2" title="移除報名"><i data-lucide="trash-2" size="20"></i></button>
                     </div>`;
                 
                 div.innerHTML = `<div class="flex items-center space-x-4"><div class="w-12 h-12 rounded-2xl flex items-center justify-center ${ok?'bg-emerald-500 text-white shadow-lg':'bg-slate-100 text-slate-400'}"><i data-lucide="${ok?'check-circle-2':'user'}" size="24"></i></div><div><div class="flex items-center gap-2"><span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-black text-slate-500">${p.title}</span><p class="font-black text-slate-800 text-xl">${p.name}</p></div>${p.status!=='none'&&p.status!=='present'?`<span class="text-[11px] font-black text-white bg-red-500 px-2 py-0.5 rounded-full mt-1 inline-block">狀態：${p.status==='duty'?'值班':p.status==='vacation'?'休假':'請假'}</span>`:''}</div></div>${action}`;
@@ -565,8 +582,8 @@
             lucide.createIcons();
         }
 
-        window.delRegistration = async (id) => { if(confirm("確定要取消報名（從名單中移除）？")) await deleteDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id)); };
-        window.cancelSign = async (id) => { if(confirm("確定取消簽到？將刪除目前簽名。")) await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id), { status: 'none', signed: false, signature: null, signedAt: null }); };
+        window.delRegistration = async (id) => { if(confirm("確定要將此人員從名單中移除？")) await deleteDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id)); };
+        window.cancelSign = async (id) => { if(confirm("確定取消簽到？將恢復為未簽狀態。")) await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id), { status: 'none', signed: false, signature: null, signedAt: null }); };
 
         function renderObservers() {
             const c = document.getElementById('observers-container'); c.innerHTML = observers.length === 0 ? '<div class="py-8 text-center text-slate-300 font-bold text-sm">無列席人員資料</div>' : '';
@@ -593,7 +610,9 @@
                 const p = attendees.find(x => x.id === id); document.getElementById('sig-name').textContent = p.name; document.getElementById('sig-title-label').textContent = p.title;
                 obs.classList.add('hidden-view'); info.classList.remove('hidden-view');
             } else { obs.classList.remove('hidden-view'); info.classList.add('hidden-view'); }
-            setTimeout(() => calibrateCanvas(), 600);
+            
+            // 核心：等 Modal 完全顯現後才進行精確校準，解決位移問題
+            setTimeout(() => calibrateCanvas(), 500);
         };
 
         function closeSign() { document.getElementById('signature-modal').classList.add('hidden-view'); document.body.classList.remove('lock-scroll'); }
@@ -628,8 +647,16 @@
             document.getElementById('reg-form').onsubmit = async (e) => {
                 e.preventDefault(); const n = document.getElementById('reg-name').value.trim();
                 let max = attendees.length > 0 ? Math.max(...attendees.map(a => a.order || 0)) : 0;
-                await addDoc(collection(db, `fyh_attendees_${currentMeeting.id}`), { title: document.getElementById('reg-title').value, name: n, signed: false, status: 'none', createdAt: serverTimestamp(), order: max + 1 });
-                document.getElementById('reg-form').classList.add('hidden'); document.getElementById('reg-success').classList.remove('hidden');
+                await addDoc(collection(db, `fyh_attendees_${currentMeeting.id}`), { 
+                    title: document.getElementById('reg-title').value, 
+                    name: n, 
+                    signed: false, 
+                    status: 'none', 
+                    createdAt: serverTimestamp(), 
+                    order: max + 1 
+                });
+                document.getElementById('reg-form').classList.add('hidden'); 
+                document.getElementById('reg-success').classList.remove('hidden');
             };
 
             document.getElementById('save-sig-btn').onclick = async () => {

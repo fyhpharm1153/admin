@@ -90,7 +90,13 @@
             width: 100% !important;
         }
 
-        #pdf-export-container { position: absolute; left: -9999px; top: 0; }
+        #pdf-export-container { 
+            position: absolute; 
+            left: -9999px; 
+            top: 0; 
+            z-index: -1;
+            background: white;
+        }
         .hidden-view { display: none !important; }
         
         .btn-hover { transition: all 0.2s ease; }
@@ -159,7 +165,7 @@
                             <span id="detail-chairman" class="font-black text-slate-800"></span>
                         </div>
                     </div>
-                    <div class="flex flex-wrap gap-2 items-center">
+                    <div class="flex items-center gap-2">
                         <button id="show-qr-btn" class="bg-slate-100 p-3 rounded-2xl hover:bg-slate-200" title="簽到 QR"><i data-lucide="qr-code"></i></button>
                         <button id="show-reg-qr-btn" class="bg-orange-50 text-orange-600 p-3 rounded-2xl hover:bg-orange-100" title="報名 QR"><i data-lucide="user-plus"></i></button>
                         <button id="direct-reg-btn" class="bg-orange-600 text-white px-4 py-2 rounded-2xl font-black hover:bg-orange-700 text-sm">報名</button>
@@ -262,7 +268,7 @@
            <div class="bg-white p-8 rounded-[2.5rem] border shadow-sm">
                <h2 id="group-form-title" class="text-2xl font-black mb-6 flex items-center text-slate-800"><i data-lucide="users" class="mr-3 text-blue-600"></i> 設定常用名單</h2>
                <div class="space-y-4">
-                   <input id="new-group-name" placeholder="群組名稱" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold" />
+                   <input id="new-group-name" placeholder="群組名稱" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold focus:ring-2 focus:ring-blue-500" />
                    <textarea id="new-group-members" placeholder="職稱-姓名 (用逗點分隔)" class="w-full p-4 h-32 rounded-2xl border bg-slate-50 outline-none text-sm"></textarea>
                    <div class="flex gap-2">
                        <button id="save-group-btn" class="flex-[2] bg-blue-700 text-white py-4 rounded-2xl font-black shadow-lg btn-hover">儲存常用資料</button>
@@ -366,6 +372,38 @@
         </div>
     </div>
 
+    <!-- PDF Template -->
+    <div id="pdf-export-container">
+        <div id="pdf-page-template" class="w-[850px] bg-white p-12 font-serif text-black">
+            <div class="text-center mb-10">
+                <h1 class="text-4xl font-bold border-b-4 border-black pb-3 inline-block">豐原醫院會議活動簽到單</h1>
+                <h2 id="pdf-header-title-inner" class="text-2xl font-bold mt-6 py-2 px-6 bg-slate-100 rounded-lg inline-block text-black"></h2>
+                <div class="grid grid-cols-2 gap-4 mt-8 text-left text-lg font-bold text-black">
+                    <div class="space-y-1 border-l-4 border-black pl-4 text-black">
+                        <p id="pdf-header-time-inner"></p>
+                        <p id="pdf-header-location-inner"></p>
+                    </div>
+                    <div class="flex items-end justify-end text-black">
+                        <p id="pdf-header-chairman-inner" class="border-b-2 border-black pb-1"></p>
+                    </div>
+                </div>
+            </div>
+            <table class="pdf-table w-full border-collapse text-center text-lg font-bold text-black">
+                <thead><tr class="h-14">
+                    <th class="w-[15%] border-2 border-black bg-slate-50">職稱</th>
+                    <th class="w-[25%] border-2 border-black bg-slate-50">姓名</th>
+                    <th class="w-[40%] border-2 border-black bg-slate-50">手寫簽名</th>
+                    <th class="w-[20%] border-2 border-black bg-slate-50">備註</th>
+                </tr></thead>
+                <tbody class="pdf-table-body-inner text-black"></tbody>
+            </table>
+            <div class="pdf-footer-stats-inner mt-10 p-6 border-2 border-black rounded-2xl hidden text-black"></div>
+            <div class="mt-8 text-right text-sm font-bold opacity-40 italic text-black">
+                簽核：____________________ 
+            </div>
+        </div>
+    </div>
+
     <!-- Script (Firebase 邏輯與修復) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -393,9 +431,9 @@
         let isEditingMeeting = false;
 
         const checkPass = () => {
-            const p = prompt("請輸入管理密碼：");
+            const p = prompt("管理密碼：");
             if (p === ADMIN_PASS) return true;
-            if (p !== null) alert("密碼錯誤，存取遭拒。");
+            if (p !== null) alert("密碼錯誤！");
             return false;
         };
 
@@ -404,19 +442,10 @@
             initTimeSlots();
             initSignaturePad();
             bindEventListeners();
-            
-            // 嘗試登入並開啟監聽
-            signInAnonymously(auth).then(() => {
-                startListeners();
-            }).catch(err => {
-                console.error("Auth Failed", err);
-                document.getElementById('loading-view').innerHTML = '<p class="text-red-500 font-bold">連線失敗，請檢查網路！</p>';
+            signInAnonymously(auth).then(() => startListeners()).catch(err => {
+                document.getElementById('loading-view').innerHTML = '<p class="text-red-500 font-bold">連線失敗</p>';
             });
-            
-            // 旋轉手機時自動校準畫板
-            window.addEventListener("orientationchange", () => {
-                setTimeout(() => calibrateCanvas(), 800);
-            });
+            window.addEventListener("orientationchange", () => { setTimeout(() => calibrateCanvas(), 800); });
         };
 
         function initTimeSlots() {
@@ -431,69 +460,39 @@
 
         function initSignaturePad() {
             const canvas = document.getElementById('signature-canvas');
-            signaturePad = new SignaturePad(canvas, { 
-                backgroundColor: 'rgb(255, 255, 255)', 
-                penColor: 'rgb(0, 0, 0)', 
-                minWidth: 2.5, 
-                maxWidth: 4.8,
-                throttle: 16
-            });
+            signaturePad = new SignaturePad(canvas, { backgroundColor: 'rgb(255, 255, 255)', penColor: 'rgb(0, 0, 0)', minWidth: 2.5, maxWidth: 4.8, throttle: 16 });
         }
 
-        // 核心修正：座標位移對齊
         function calibrateCanvas() {
             if (document.getElementById('signature-modal').classList.contains('hidden-view')) return;
             const canvas = document.getElementById('signature-canvas');
             const wrapper = document.getElementById('canvas-wrapper');
             if (!wrapper || !canvas) return;
-
             const rect = wrapper.getBoundingClientRect();
             const ratio = Math.max(window.devicePixelRatio || 1, 1);
-            
-            // 重要：同步 CSS 物理尺寸與 Canvas 屬性尺寸
             canvas.width = rect.width * ratio;
             canvas.height = rect.height * ratio;
-            
             const ctx = canvas.getContext("2d");
-            ctx.setTransform(1, 0, 0, 1, 0, 0); 
-            ctx.scale(ratio, ratio);
-            
+            ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.scale(ratio, ratio);
             signaturePad.clear();
         }
 
         function startListeners() {
-            // 獲取會議，帶入錯誤回呼避免卡死
             onSnapshot(collection(db, 'fyh_meetings'), snapshot => {
                 meetings = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                 renderMeetings();
                 document.getElementById('loading-view').classList.add('hidden-view');
-                
                 const mid = new URLSearchParams(window.location.search).get('m'), reg = new URLSearchParams(window.location.search).get('reg');
                 if (mid && !currentMeeting) { const m = meetings.find(x => x.id === mid); if (m) openMeeting(m); }
                 else if (reg && !currentMeeting) { const m = meetings.find(x => x.id === reg); if (m) openReg(m); }
                 else if (!currentMeeting && !reg) showUI('list');
-            }, err => {
-                console.error("Firestore Listen Error", err);
-                document.getElementById('loading-view').classList.add('hidden-view');
-                showUI('list');
-            });
-
-            onSnapshot(collection(db, 'fyh_groups'), snapshot => {
-                groups = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                renderGroups();
-            });
+            }, () => { showUI('list'); });
+            onSnapshot(collection(db, 'fyh_groups'), snapshot => { groups = snapshot.docs.map(d => ({ id: d.id, ...d.data() })); renderGroups(); });
         }
 
         function startDetailListeners(mid) {
-            onSnapshot(collection(db, `fyh_attendees_${mid}`), snapshot => {
-                attendees = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                renderAttendees(); updateStats();
-                if (!document.getElementById('admin-view').classList.contains('hidden-view')) renderAdminList();
-            });
-            onSnapshot(collection(db, `fyh_observers_${mid}`), snapshot => {
-                observers = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                renderObservers();
-            });
+            onSnapshot(collection(db, `fyh_attendees_${mid}`), snapshot => { attendees = snapshot.docs.map(d => ({ id: d.id, ...d.data() })); renderAttendees(); updateStats(); if (!document.getElementById('admin-view').classList.contains('hidden-view')) renderAdminList(); });
+            onSnapshot(collection(db, `fyh_observers_${mid}`), snapshot => { observers = snapshot.docs.map(d => ({ id: d.id, ...d.data() })); renderObservers(); });
             onSnapshot(doc(db, 'fyh_meetings', mid), d => { if (d.exists()) { currentMeeting = { id: d.id, ...d.data() }; updateHeader(); } });
         }
 
@@ -510,49 +509,28 @@
             const c = document.getElementById('meetings-container'); c.innerHTML = meetings.length === 0 ? '<div class="py-20 text-center text-slate-300 font-bold">目前尚無活動</div>' : '';
             meetings.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0)).forEach(m => {
                 const div = document.createElement('div'); div.className = "bg-white rounded-3xl border border-slate-200 p-6 shadow-sm";
-                div.innerHTML = `
-                    <div class="flex items-center justify-between">
-                        <div class="flex-1 cursor-pointer" onclick="window.goM('${m.id}')">
-                            <h3 class="font-black text-xl text-slate-800 leading-tight">${m.title}</h3>
-                            <div class="flex gap-4 text-[10px] mt-3 font-black text-slate-400 uppercase tracking-widest">
-                                <span class="flex items-center"><i data-lucide="calendar" size="12" class="mr-1"></i> ${m.date}</span>
-                                <span class="flex items-center"><i data-lucide="map-pin" size="12" class="mr-1"></i> ${m.location}</span>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <button onclick="window.goReg('${m.id}')" class="bg-orange-100 text-orange-600 px-4 py-2 rounded-xl text-xs font-black shadow-sm active:scale-95 transition-all">報名</button>
-                            <button class="p-2 text-slate-200 hover:text-red-500 transition-colors" onclick="window.delM('${m.id}')"><i data-lucide="trash-2" size="20"></i></button>
-                        </div>
-                    </div>
-                `;
+                div.innerHTML = `<div class="flex items-center justify-between"><div class="flex-1 cursor-pointer" onclick="window.goM('${m.id}')"><h3 class="font-black text-xl text-slate-800 leading-tight">${m.title}</h3><div class="flex gap-4 text-[10px] mt-3 font-black text-slate-400 uppercase tracking-widest"><span class="flex items-center"><i data-lucide="calendar" size="12" class="mr-1"></i> ${m.date}</span><span class="flex items-center"><i data-lucide="map-pin" size="12" class="mr-1"></i> ${m.location}</span></div></div><div class="flex gap-2"><button onclick="window.goReg('${m.id}')" class="bg-orange-100 text-orange-600 px-4 py-2 rounded-xl text-xs font-black shadow-sm active:scale-95 transition-all">報名</button><button class="p-2 text-slate-200 hover:text-red-500 transition-colors" onclick="window.delM('${m.id}')"><i data-lucide="trash-2" size="20"></i></button></div></div>`;
                 c.appendChild(div);
-            });
-            lucide.createIcons();
+            }); lucide.createIcons();
         }
         window.goM = (id) => { const m = meetings.find(x => x.id === id); if(m) openMeeting(m); };
         window.goReg = (id) => { const m = meetings.find(x => x.id === id); if(m) openReg(m); };
-        window.delM = async (id) => { if(checkPass() && confirm("確定刪除活動及其名單？")) await deleteDoc(doc(db, 'fyh_meetings', id)); };
+        window.delM = async (id) => { if(checkPass() && confirm("確定刪除此活動？")) await deleteDoc(doc(db, 'fyh_meetings', id)); };
 
         function openMeeting(m) { currentMeeting = m; startDetailListeners(m.id); showUI('detail'); }
         function openReg(m) {
-            currentMeeting = m; showUI('registration');
-            document.getElementById('reg-meeting-title').textContent = m.title;
-            document.getElementById('reg-meeting-info').textContent = `${m.date} | ${m.location}`;
+            currentMeeting = m; showUI('registration'); document.getElementById('reg-meeting-title').textContent = m.title;
             const active = (new Date().toISOString().split('T')[0] >= (m.regStart||"0000") && new Date().toISOString().split('T')[0] <= (m.regEnd||"9999"));
             document.getElementById('reg-status-container').classList.toggle('hidden', active);
-            if (!active) document.getElementById('reg-status-msg').textContent = "本活動報名期間已結束";
-            document.getElementById('reg-form').classList.toggle('hidden', !active);
-            document.getElementById('reg-success').classList.add('hidden');
+            if (!active) document.getElementById('reg-status-msg').textContent = "報名期間已結束";
+            document.getElementById('reg-form').classList.toggle('hidden', !active); document.getElementById('reg-success').classList.add('hidden');
         }
 
         function updateHeader() {
-            document.getElementById('detail-title').textContent = currentMeeting.title;
-            document.getElementById('detail-date').textContent = currentMeeting.date;
-            document.getElementById('detail-time').textContent = currentMeeting.time;
-            document.getElementById('detail-location').textContent = currentMeeting.location;
+            document.getElementById('detail-title').textContent = currentMeeting.title; document.getElementById('detail-date').textContent = currentMeeting.date;
+            document.getElementById('detail-time').textContent = currentMeeting.time; document.getElementById('detail-location').textContent = currentMeeting.location;
             document.getElementById('detail-chairman').textContent = currentMeeting.chairman || '(未設定)';
-            const today = (new Date().getFullYear() + "-" + (new Date().getMonth() + 1).toString().padStart(2, '0') + "-" + new Date().getDate().toString().padStart(2, '0'));
-            const active = today === currentMeeting.date;
+            const active = (new Date().getFullYear() + "-" + (new Date().getMonth() + 1).toString().padStart(2, '0') + "-" + new Date().getDate().toString().padStart(2, '0')) === currentMeeting.date;
             document.getElementById('sign-time-warning').classList.toggle('hidden', active);
             document.getElementById('allowed-sign-range').textContent = `${currentMeeting.signStart||"08:00"} ~ ${currentMeeting.signEnd||"17:30"}`;
         }
@@ -562,61 +540,38 @@
             attendees.sort((a,b) => (a.order||0)-(b.order||0)).forEach(p => {
                 const ok = p.status === 'present';
                 const div = document.createElement('div'); div.className = `bg-white p-5 rounded-3xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm ${ok ? 'border-emerald-500 bg-emerald-50/10' : 'border-slate-100'}`;
-                
-                let action = ok ? 
+                let act = ok ? 
                     `<div class="flex items-center gap-2"><img src="${p.signature}" class="h-12 w-32 object-contain bg-white rounded-lg p-1 border shadow-inner"><div class="flex flex-col gap-1"><button class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-[10px] font-black" onclick="window.openSignPopup('attendee', '${p.id}')">重簽</button><button class="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-[10px] font-black" onclick="window.cancelSign('${p.id}')">取消</button></div></div>` : 
-                    `<div class="flex gap-2 items-center">
-                        <button class="bg-blue-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-lg active:scale-95 transition-all" onclick="window.openSignPopup('attendee', '${p.id}')">簽名</button>
-                        <select class="text-xs border-2 rounded-2xl px-2 py-3 bg-slate-50 font-black outline-none" onchange="window.setS('${p.id}', this.value)">
-                            <option value="none">-- 狀態 --</option><option value="duty" ${p.status==='duty'?'selected':''}>值班</option><option value="vacation" ${p.status==='vacation'?'selected':''}>休假</option><option value="leave" ${p.status==='leave'?'selected':''}>請假</option>
-                        </select>
-                        <button onclick="window.delRegistration('${p.id}')" class="text-red-300 hover:text-red-500 p-2" title="移除人員"><i data-lucide="trash-2" size="20"></i></button>
-                    </div>`;
-                
-                div.innerHTML = `<div class="flex items-center space-x-4"><div class="w-12 h-12 rounded-2xl flex items-center justify-center ${ok?'bg-emerald-500 text-white shadow-lg':'bg-slate-100 text-slate-400'}"><i data-lucide="${ok?'check-circle-2':'user'}" size="24"></i></div><div><div class="flex items-center gap-2"><span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-black text-slate-500">${p.title}</span><p class="font-black text-slate-800 text-xl">${p.name}</p></div>${p.status!=='none'&&p.status!=='present'?`<span class="text-[11px] font-black text-white bg-red-500 px-2 py-0.5 rounded-full mt-1 inline-block">狀態：${p.status==='duty'?'值班':p.status==='vacation'?'休假':'請假'}</span>`:''}</div></div>${action}`;
+                    `<div class="flex gap-2 items-center"><button class="bg-blue-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-lg active:scale-95" onclick="window.openSignPopup('attendee', '${p.id}')">簽名</button><select class="text-xs border-2 rounded-2xl px-2 py-3 bg-slate-50 font-black" onchange="window.setS('${p.id}', this.value)"><option value="none">--備註--</option><option value="duty" ${p.status==='duty'?'selected':''}>值班</option><option value="vacation" ${p.status==='vacation'?'selected':''}>休假</option><option value="leave" ${p.status==='leave'?'selected':''}>請假</option></select><button onclick="window.delReg('${p.id}')" class="text-red-300 p-2"><i data-lucide="trash-2" size="20"></i></button></div>`;
+                div.innerHTML = `<div class="flex items-center space-x-4"><div class="w-12 h-12 rounded-2xl flex items-center justify-center ${ok?'bg-emerald-500 text-white shadow-lg':'bg-slate-100 text-slate-400'}"><i data-lucide="${ok?'check-circle-2':'user'}" size="24"></i></div><div><div class="flex items-center gap-2"><span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-black text-slate-500">${p.title}</span><p class="font-black text-slate-800 text-xl">${p.name}</p></div>${p.status!=='none'&&p.status!=='present'?`<span class="text-[11px] font-black text-white bg-red-500 px-2 py-0.5 rounded-full mt-1 inline-block">狀態：${p.status==='duty'?'值班':p.status==='vacation'?'休假':'請假'}</span>`:''}</div></div>${act}`;
                 c.appendChild(div);
-            });
-            lucide.createIcons();
+            }); lucide.createIcons();
         }
 
-        window.delRegistration = async (id) => { if(confirm("移除此報名人員？")) await deleteDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id)); };
-        window.cancelSign = async (id) => { if(confirm("取消簽到？簽名將移除並恢復為未簽狀態。")) await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id), { status: 'none', signed: false, signature: null, signedAt: null }); };
+        window.delReg = async (id) => { if(confirm("移除此報名人員？")) await deleteDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id)); };
+        window.cancelSign = async (id) => { if(confirm("取消簽到？將恢復為未簽狀態。")) await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id), { status: 'none', signed: false, signature: null, signedAt: null }); };
 
         function renderObservers() {
             const c = document.getElementById('observers-container'); c.innerHTML = observers.length === 0 ? '<div class="py-8 text-center text-slate-300 font-bold text-sm">目前無臨時列席</div>' : '';
             observers.forEach(o => {
                 const div = document.createElement('div'); div.className = "bg-white p-5 rounded-3xl border flex items-center justify-between shadow-sm border-orange-100";
-                div.innerHTML = `<div class="flex items-center space-x-3"><div class="w-10 h-10 rounded-xl bg-orange-500 text-white text-[10px] font-black flex items-center justify-center uppercase tracking-tighter shadow-md shadow-orange-100">Guest</div><div><p class="font-black text-slate-800">${o.name}</p><p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">${o.department}</p></div></div><img src="${o.signature}" class="h-12 w-32 object-contain bg-white rounded-lg p-1 shadow-inner">`;
+                div.innerHTML = `<div class="flex items-center space-x-3"><div class="w-10 h-10 rounded-xl bg-orange-500 text-white text-[10px] font-black flex items-center justify-center uppercase shadow-md shadow-orange-100">Guest</div><div><p class="font-black text-slate-800">${o.name}</p><p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">${o.department}</p></div></div><div class="flex items-center gap-3"><img src="${o.signature}" class="h-12 w-32 object-contain bg-white rounded-lg p-1 border shadow-inner"><button onclick="window.delObs('${o.id}')" class="text-red-300 hover:text-red-500 p-2"><i data-lucide="trash-2" size="20"></i></button></div>`;
                 c.appendChild(div);
-            });
+            }); lucide.createIcons();
         }
+        window.delObs = async (id) => { if(confirm("移除此列席人員？")) await deleteDoc(doc(db, `fyh_observers_${currentMeeting.id}`, id)); };
 
-        function updateStats() {
-            const count = attendees.filter(a => a.status === 'present').length;
-            const rate = attendees.length > 0 ? Math.round((count / attendees.length) * 100) : 0;
-            document.getElementById('stat-rate').textContent = `${rate}%`; document.getElementById('stat-count').textContent = `${count} / ${attendees.length}`;
-        }
-
+        function updateStats() { const count = attendees.filter(a => a.status === 'present').length; const rate = attendees.length > 0 ? Math.round((count / attendees.length) * 100) : 0; document.getElementById('stat-rate').textContent = `${rate}%`; document.getElementById('stat-count').textContent = `${count} / ${attendees.length}`; }
         window.setS = async (id, s) => { await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id), { status: s, signed: s==='present', signature: null }); };
 
         window.openSignPopup = (type, id) => {
             activeSignPerson = { type, id }; document.body.classList.add('lock-scroll');
             document.getElementById('signature-modal').classList.remove('hidden-view');
             const obs = document.getElementById('sig-observer-fields');
-            if (type === 'attendee') {
-                const p = attendees.find(x => x.id === id); 
-                document.getElementById('sig-name').textContent = p.name; 
-                document.getElementById('sig-title-label').textContent = p.title;
-                obs.classList.add('hidden-view'); 
-            } else { 
-                obs.classList.remove('hidden-view'); 
-                document.getElementById('sig-name').textContent = "臨時簽到"; 
-                document.getElementById('sig-title-label').textContent = "";
-            }
-            // 延遲以等待 Modal 顯示與裝置旋轉完成
+            if (type === 'attendee') { const p = attendees.find(x => x.id === id); document.getElementById('sig-name').textContent = p.name; document.getElementById('sig-title-label').textContent = p.title; obs.classList.add('hidden-view'); }
+            else { obs.classList.remove('hidden-view'); document.getElementById('sig-name').textContent = "臨時簽到"; document.getElementById('sig-title-label').textContent = ""; }
             setTimeout(() => calibrateCanvas(), 800);
         };
-
         window.closeSign = () => { document.getElementById('signature-modal').classList.add('hidden-view'); document.body.classList.remove('lock-scroll'); };
 
         function bindEventListeners() {
@@ -642,8 +597,7 @@
                 const data = signaturePad.toDataURL('image/png', 0.6);
                 if (activeSignPerson.type === 'attendee') await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, activeSignPerson.id), { signed: true, status: 'present', signature: data, signedAt: new Date().toISOString() });
                 else {
-                    const n = document.getElementById('sig-obs-name').value, d = document.getElementById('sig-obs-dept').value; 
-                    if (!n || !d) return alert('請完整填寫資訊');
+                    const n = document.getElementById('sig-obs-name').value, d = document.getElementById('sig-obs-dept').value; if (!n || !d) return alert('資訊不全');
                     await addDoc(collection(db, `fyh_observers_${currentMeeting.id}`), { name: n, department: d, signature: data, signedAt: new Date().toISOString() });
                 }
                 closeSign();
@@ -664,7 +618,7 @@
                 document.getElementById('batch-names-input').value = '';
             };
 
-            document.getElementById('clear-all-attendees-btn').onclick = async () => { if (checkPass() && confirm("確定清空？")) { for (const p of attendees) { await deleteDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, p.id)); } } };
+            document.getElementById('clear-all-attendees-btn').onclick = async () => { if (checkPass() && confirm("確定清空名單？")) { for (const p of attendees) { await deleteDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, p.id)); } } };
 
             document.getElementById('save-group-btn').onclick = async () => {
                 const n = document.getElementById('new-group-name').value, m = document.getElementById('new-group-members').value.split(/[,，\n]/).map(x => x.trim()).filter(x => x);
@@ -686,7 +640,7 @@
         }
 
         function openEditModal() {
-            isEditingMeeting = true; document.getElementById('modal-title').textContent = "編輯活動資訊";
+            isEditingMeeting = true; document.getElementById('modal-title').textContent = "編輯資訊";
             document.getElementById('m-title').value = currentMeeting.title; document.getElementById('m-date').value = currentMeeting.date;
             document.getElementById('m-time').value = currentMeeting.time; document.getElementById('m-chairman').value = currentMeeting.chairman;
             document.getElementById('m-location').value = currentMeeting.location; document.getElementById('m-sign-start').value = currentMeeting.signStart;
@@ -704,41 +658,39 @@
             document.getElementById('qr-modal').classList.remove('hidden-view');
         }
 
-        function resetGrp() {
-            document.getElementById('new-group-name').value = ''; document.getElementById('new-group-members').value = '';
-            document.getElementById('group-form-title').innerHTML = '<i data-lucide="users" class="mr-2 text-blue-600"></i> 設定常用名單';
-            document.getElementById('save-group-btn').textContent = '儲存設定'; document.getElementById('cancel-group-edit-btn').classList.add('hidden');
-            lucide.createIcons();
-        }
+        function resetGrp() { document.getElementById('new-group-name').value = ''; document.getElementById('new-group-members').value = ''; document.getElementById('group-form-title').innerHTML = '<i data-lucide="users" class="mr-2 text-blue-600"></i> 設定常用名單'; document.getElementById('save-group-btn').textContent = '儲存設定'; document.getElementById('cancel-group-edit-btn').classList.add('hidden'); lucide.createIcons(); }
 
         async function exportPDF() {
-            const b = document.getElementById('pdf-btn'); b.disabled = true; b.innerHTML = '生成中...';
+            const b = document.getElementById('pdf-btn'); b.disabled = true; b.innerHTML = '<i class="animate-spin" data-lucide="loader-2"></i> 生成中...'; lucide.createIcons();
             const { jsPDF } = window.jspdf; const pdf = new jsPDF('p', 'mm', 'a4');
             const all = [...attendees.sort((a,b)=>(a.order||0)-(b.order||0)).map(p => ({ title: p.title, name: p.name, signature: p.signature, note: p.status === 'duty'?'值班':p.status==='vacation'?'休假':p.status==='leave'?'請假':'' })), ...observers.map(o => ({ title: '列席', name: o.name, signature: o.signature, note: o.department }))];
             const per = 11, pages = Math.ceil(all.length / per) || 1;
+            
+            // 暫時將隱藏容器顯示在一個不影響 UI 的地方以進行渲染
+            const container = document.getElementById('pdf-export-container');
+            container.style.left = "0px"; container.style.zIndex = "1000"; container.style.opacity = "0.01";
+
             for (let i = 0; i < pages; i++) {
                 if (i > 0) pdf.addPage();
-                const h = document.getElementById('pdf-page-template');
-                document.getElementById('pdf-header-title').textContent = currentMeeting.title;
-                document.getElementById('pdf-header-time').textContent = "時間：" + currentMeeting.date + " " + currentMeeting.time;
-                document.getElementById('pdf-header-location').textContent = "地點：" + currentMeeting.location;
-                document.getElementById('pdf-header-chairman').textContent = "主席：" + (currentMeeting.chairman || '');
-                const body = h.querySelector('.pdf-table-body'); body.innerHTML = '';
+                document.getElementById('pdf-header-title-inner').textContent = currentMeeting.title;
+                document.getElementById('pdf-header-time-inner').textContent = "時間：" + currentMeeting.date + " " + (currentMeeting.time||"");
+                document.getElementById('pdf-header-location-inner').textContent = "地點：" + currentMeeting.location;
+                document.getElementById('pdf-header-chairman-inner').textContent = "主持人：" + (currentMeeting.chairman || '');
+                const body = container.querySelector('.pdf-table-body-inner'); body.innerHTML = '';
                 const end = Math.min((i+1)*per, all.length);
                 for (let j = i*per; j < end; j++) {
-                    const p = all[j]; const tr = document.createElement('tr'); tr.className = "h-[50px]";
-                    tr.innerHTML = `<td class="p-3 text-sm border border-black">${p.title}</td><td class="p-3 text-xl font-bold border border-black text-black">${p.name}</td><td class="p-2 border border-black">${p.signature ? `<img src="${p.signature}" style="max-height:48px; width:120px; margin:auto;">` : ''}</td><td class="p-3 text-sm text-slate-500 border border-black">${p.note}</td>`;
+                    const p = all[j]; const tr = document.createElement('tr'); tr.className = "h-[50px] text-black border border-black";
+                    tr.innerHTML = `<td class="p-3 text-sm border-2 border-black text-black">${p.title}</td><td class="p-3 text-xl font-bold border-2 border-black text-black">${p.name}</td><td class="p-2 border-2 border-black text-black">${p.signature ? `<img src="${p.signature}" style="max-height:45px; width:110px; margin:auto;">` : ''}</td><td class="p-3 text-sm border-2 border-black text-black">${p.note}</td>`;
                     body.appendChild(tr);
                 }
-                const f = h.querySelector('.pdf-footer-stats');
-                if (i === pages - 1) {
-                    const ok = attendees.filter(a => a.status === 'present').length;
-                    f.classList.remove('hidden'); f.innerHTML = `出席率：${Math.round((ok/attendees.length)*100)}% (${ok}/${attendees.length})`;
-                } else f.classList.add('hidden');
-                const canvas = await html2canvas(h, { scale: 2.5, useCORS: true });
-                pdf.addImage(canvas.toDataURL('image/jpeg', 0.85), 'JPEG', 0, 0, 210, (canvas.height*210)/canvas.width);
+                const f = container.querySelector('.pdf-footer-stats-inner');
+                if (i === pages - 1) { const ok = attendees.filter(a => a.status === 'present').length; f.classList.remove('hidden'); f.innerHTML = `出席率：${Math.round((ok/attendees.length)*100)}% (實到 ${ok} / 應到 ${attendees.length})`; } else f.classList.add('hidden');
+                
+                const canvas = await html2canvas(document.getElementById('pdf-page-template'), { scale: 2, useCORS: true, logging: false });
+                pdf.addImage(canvas.toDataURL('image/jpeg', 0.8), 'JPEG', 0, 0, 210, (canvas.height*210)/canvas.width);
             }
-            pdf.save(`簽到單_${currentMeeting.title}.pdf`); b.disabled = false; b.innerHTML = '<i data-lucide="file-text"></i> 匯出報表 (PDF)'; lucide.createIcons();
+            container.style.left = "-9999px";
+            pdf.save(`簽到單_${currentMeeting.title}.pdf`); b.disabled = false; b.innerHTML = '<i data-lucide="file-text"></i> 匯出 PDF'; lucide.createIcons();
         }
 
         function exportExcel() {
@@ -751,8 +703,8 @@
         function renderAdminList() {
             const c = document.getElementById('admin-attendees-list'); c.innerHTML = ''; const sorted = attendees.sort((a,b)=>(a.order||0)-(b.order||0));
             sorted.forEach((p, idx) => {
-                const div = document.createElement('div'); div.className = "p-4 border-b last:border-0 flex justify-between items-center bg-white";
-                div.innerHTML = `<div class="flex items-center gap-4"><div class="flex flex-col"><button onclick="window.moveAtt('${p.id}',-1)" class="text-blue-500"><i data-lucide="chevron-up" size="18"></i></button><button onclick="window.moveAtt('${p.id}',1)" class="text-blue-500"><i data-lucide="chevron-down" size="18"></i></button></div><span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-black tracking-tighter">${p.title}</span><span class="font-black text-slate-700 text-lg">${p.name}</span></div><button class="text-red-300" onclick="window.delAtt('${p.id}')"><i data-lucide="trash-2" size="20"></i></button>`;
+                const div = document.createElement('div'); div.className = "p-4 border-b flex justify-between items-center bg-white";
+                div.innerHTML = `<div class="flex items-center gap-4"><div class="flex flex-col"><button onclick="window.moveAtt('${p.id}',-1)" class="text-blue-500"><i data-lucide="chevron-up" size="18"></i></button><button onclick="window.moveAtt('${p.id}',1)" class="text-blue-600"><i data-lucide="chevron-down" size="18"></i></button></div><span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-black tracking-tighter">${p.title}</span><span class="font-black text-slate-700 text-lg">${p.name}</span></div><button class="text-red-300 hover:text-red-500 p-2" onclick="window.delReg('${p.id}')"><i data-lucide="trash-2" size="20"></i></button>`;
                 c.appendChild(div);
             }); lucide.createIcons();
         }
@@ -760,7 +712,6 @@
             const s = attendees.sort((a,b)=>(a.order||0)-(b.order||0)); const i = s.findIndex(x => x.id === id); if (i===-1||(i+dir<0)||(i+dir>=s.length)) return;
             const a = s[i], b = s[i+dir]; await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, a.id), { order: b.order || 0 }); await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, b.id), { order: a.order || 0 });
         };
-        window.delAtt = async (id) => { if(confirm("移除人員？")) await deleteDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id)); };
 
         function renderGroups() {
             const c = document.getElementById('groups-container'); c.innerHTML = '';
@@ -778,7 +729,6 @@
             document.getElementById('save-group-btn').textContent = '更新設定'; document.getElementById('cancel-group-edit-btn').classList.remove('hidden');
             window.scrollTo({ top: 0, behavior: 'smooth' }); lucide.createIcons();
         };
-
         window.delGrp = async (id) => { if(checkPass() && confirm("確定刪除群組？")) await deleteDoc(doc(db, 'fyh_groups', id)); };
     </script>
 </body>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>醫院會議簽到系統 - 豐原醫院藥劑科</title>
+    <title>醫院會議與活動管理系統 - 豐原醫院</title>
     
     <!-- 資源載入 -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -23,10 +23,17 @@
             overscroll-behavior-y: contain;
         }
 
-        /* 簽名板防跳動與鎖定背景 */
+        /* 簽名板與彈窗優化 */
         #signature-modal {
             touch-action: none;
             overscroll-behavior: none;
+        }
+
+        /* 允許彈窗內容滾動，防止橫向模式按鈕消失 */
+        .sig-modal-content {
+            max-height: 95vh;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         .signature-pad-canvas {
@@ -48,25 +55,36 @@
         #pdf-export-container { position: absolute; left: -9999px; top: 0; }
         .hidden-view { display: none !important; }
         
-        .person-card { transition: all 0.2s ease; }
+        .btn-hover { transition: all 0.2s ease; }
+        .btn-hover:active { transform: scale(0.95); }
+
+        /* 虛擬滑動提示 */
+        .scroll-hint {
+            animation: bounce 2s infinite;
+        }
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {transform: translateY(0);}
+            40% {transform: translateY(-5px);}
+            60% {transform: translateY(-3px);}
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 min-h-screen pb-10">
 
     <!-- Header -->
-    <header class="bg-blue-700 text-white shadow-md p-4 sticky top-0 z-40">
+    <header class="bg-blue-800 text-white shadow-lg p-4 sticky top-0 z-40">
         <div class="max-w-3xl mx-auto flex items-center justify-between">
             <div class="flex items-center space-x-2">
-                <button id="back-btn" class="p-1 hover:bg-blue-800 rounded transition-colors hidden">
+                <button id="back-btn" class="p-1 hover:bg-blue-900 rounded transition-colors hidden">
                     <i data-lucide="arrow-left"></i>
                 </button>
-                <h1 class="text-xl font-bold tracking-tight">醫院會議簽到系統</h1>
+                <h1 class="text-xl font-bold tracking-widest">會議與報名系統</h1>
             </div>
             <div id="header-actions" class="flex items-center space-x-3">
-                <button id="nav-groups-btn" class="bg-blue-800 p-2 rounded-full hover:bg-blue-900" title="常用群組管理">
+                <button id="nav-groups-btn" class="bg-blue-900 p-2 rounded-full hover:bg-blue-950" title="管理群組 (需密碼)">
                     <i data-lucide="users"></i>
                 </button>
-                <button id="open-add-meeting-btn" class="bg-white text-blue-700 p-2 rounded-full shadow-lg" title="建立新會議">
+                <button id="open-add-meeting-btn" class="bg-white text-blue-800 p-2 rounded-full shadow-lg hover:bg-blue-50" title="建立新活動 (需密碼)">
                     <i data-lucide="plus"></i>
                 </button>
             </div>
@@ -77,7 +95,7 @@
         <!-- 載入中 -->
         <div id="loading-view" class="flex flex-col items-center justify-center py-20">
             <div class="animate-spin text-blue-600 mb-4"><i data-lucide="loader-2" size="48"></i></div>
-            <p class="text-slate-500 font-medium">資料庫連線中...</p>
+            <p class="text-slate-500 font-bold tracking-widest">系統連線中...</p>
         </div>
 
         <!-- 會議列表 -->
@@ -87,180 +105,245 @@
 
         <!-- 會議詳情 -->
         <div id="detail-view" class="space-y-6 hidden-view">
-            <div class="bg-white rounded-3xl shadow-sm border p-6">
+            <div class="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-6 overflow-hidden relative">
                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <div class="flex-1">
-                        <h2 id="detail-title" class="text-2xl font-black text-slate-800 line-clamp-2"></h2>
-                        <div class="flex flex-wrap gap-2 mt-2 font-bold text-sm">
-                            <span id="detail-date" class="bg-blue-50 text-blue-700 px-3 py-1 rounded-full"></span>
-                            <span id="detail-time" class="bg-slate-100 px-3 py-1 rounded-full text-slate-600"></span>
-                            <span id="detail-location" class="bg-slate-100 px-3 py-1 rounded-full text-slate-600"></span>
+                        <div class="flex items-start gap-2">
+                            <h2 id="detail-title" class="text-2xl font-black text-slate-800 leading-tight"></h2>
+                            <button id="main-edit-btn" class="mt-1 p-1.5 text-slate-300 hover:text-blue-600 transition-colors" title="編輯活動資訊 (需密碼)">
+                                <i data-lucide="settings" size="18"></i>
+                            </button>
                         </div>
-                        <div class="mt-4 flex items-center gap-2">
-                            <span class="text-slate-500 text-sm">主席：</span>
-                            <span id="detail-chairman" class="font-bold text-slate-800"></span>
-                            <button id="edit-chairman-btn" class="p-1 text-slate-300 hover:text-blue-500"><i data-lucide="edit-3" size="14"></i></button>
+                        <div class="flex flex-wrap gap-2 mt-3 font-bold text-sm">
+                            <span id="detail-date" class="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full shadow-sm"></span>
+                            <span id="detail-time" class="bg-slate-100 px-4 py-1.5 rounded-full text-slate-600"></span>
+                            <span id="detail-location" class="bg-slate-100 px-4 py-1.5 rounded-full text-slate-600"></span>
+                        </div>
+                        <div class="mt-4 p-3 bg-red-50 border border-red-100 rounded-2xl hidden" id="sign-time-warning">
+                            <p class="text-red-600 text-xs font-bold flex items-center">
+                                <i data-lucide="clock" class="mr-1" size="14"></i> 
+                                目前非開放簽到時間 (<span id="allowed-sign-range"></span>)
+                            </p>
+                        </div>
+                        <div class="mt-5 flex items-center gap-2 bg-slate-50 w-fit px-3 py-1 rounded-xl">
+                            <span class="text-slate-500 text-xs font-bold uppercase tracking-wider">主席</span>
+                            <span id="detail-chairman" class="font-black text-slate-800"></span>
                         </div>
                     </div>
                     <div class="flex gap-2">
-                        <button id="show-qr-btn" class="bg-slate-100 p-3 rounded-2xl hover:bg-slate-200" title="顯示 QR Code"><i data-lucide="qr-code"></i></button>
-                        <button id="nav-admin-btn" class="bg-slate-800 text-white px-5 py-2.5 rounded-2xl font-bold hover:bg-slate-900">管理名單</button>
+                        <button id="show-qr-btn" class="bg-slate-100 p-4 rounded-2xl hover:bg-slate-200 btn-hover" title="簽到 QR Code"><i data-lucide="qr-code"></i></button>
+                        <button id="show-reg-qr-btn" class="bg-orange-50 text-orange-600 p-4 rounded-2xl hover:bg-orange-100 btn-hover" title="報名 QR Code"><i data-lucide="user-plus"></i></button>
+                        <button id="nav-admin-btn" class="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black hover:bg-black btn-hover">管理人員</button>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4 mb-6 text-center">
-                    <div class="bg-blue-50 p-5 rounded-3xl border border-blue-100">
-                        <p class="text-[10px] text-blue-600 font-black uppercase">出席率</p>
-                        <p id="stat-rate" class="text-3xl font-black text-blue-900">0%</p>
+                    <div class="bg-gradient-to-br from-blue-50 to-white p-5 rounded-3xl border border-blue-100 shadow-sm">
+                        <p class="text-[10px] text-blue-600 font-black uppercase tracking-[0.2em]">Attendance Rate</p>
+                        <p id="stat-rate" class="text-4xl font-black text-blue-900 mt-1">0%</p>
                     </div>
-                    <div class="bg-emerald-50 p-5 rounded-3xl border border-emerald-100">
-                        <p class="text-[10px] text-emerald-600 font-black uppercase">實到 / 應到</p>
-                        <p id="stat-count" class="text-3xl font-black text-emerald-900">0 / 0</p>
+                    <div class="bg-gradient-to-br from-emerald-50 to-white p-5 rounded-3xl border border-emerald-100 shadow-sm">
+                        <p class="text-[10px] text-emerald-600 font-black uppercase tracking-[0.2em]">Present Count</p>
+                        <p id="stat-count" class="text-4xl font-black text-emerald-900 mt-1">0 / 0</p>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
-                    <button id="pdf-btn" class="bg-emerald-600 text-white py-4 rounded-2xl font-bold text-sm shadow hover:bg-emerald-700">匯出 PDF (換頁優化)</button>
-                    <button id="excel-btn" class="bg-blue-600 text-white py-4 rounded-2xl font-bold text-sm shadow hover:bg-blue-700">匯出 Excel</button>
+                    <button id="pdf-btn" class="bg-emerald-600 text-white py-4 rounded-2xl font-black text-sm shadow-lg shadow-emerald-100 btn-hover flex items-center justify-center gap-2">
+                        <i data-lucide="file-text"></i> 匯出報表 (PDF)
+                    </button>
+                    <button id="excel-btn" class="bg-blue-600 text-white py-4 rounded-2xl font-black text-sm shadow-lg shadow-blue-100 btn-hover flex items-center justify-center gap-2">
+                        <i data-lucide="file-spreadsheet"></i> 匯出 Excel
+                    </button>
                 </div>
             </div>
 
             <section class="space-y-4">
-                <h3 class="font-black text-slate-800 flex items-center px-2"><i data-lucide="clipboard-list" class="mr-2 text-blue-600"></i> 出席簽到區</h3>
+                <h3 class="font-black text-slate-800 flex items-center px-2 text-lg"><i data-lucide="check-square" class="mr-2 text-blue-600"></i> 出席簽到區</h3>
                 <div id="attendees-container" class="grid gap-3"></div>
             </section>
 
-            <section class="space-y-4">
+            <section class="space-y-4 pt-4 border-t border-dashed border-slate-200">
                 <div class="flex items-center justify-between px-2">
-                    <h3 class="font-black text-slate-800 flex items-center"><i data-lucide="plus" class="mr-2 text-orange-500"></i> 列席人員區</h3>
-                    <button id="guest-sign-btn" class="bg-orange-100 text-orange-600 text-sm font-bold px-4 py-1.5 rounded-full">臨時列席簽到</button>
+                    <h3 class="font-black text-slate-800 flex items-center text-lg"><i data-lucide="user-plus" class="mr-2 text-orange-500"></i> 列席人員區</h3>
+                    <button id="guest-sign-btn" class="bg-orange-100 text-orange-600 text-sm font-black px-5 py-2 rounded-full hover:bg-orange-200 btn-hover sign-enabled-only">臨時簽到</button>
                 </div>
                 <div id="observers-container" class="grid gap-3"></div>
             </section>
         </div>
 
-        <!-- 名單維護 -->
-        <div id="admin-view" class="space-y-6 hidden-view">
-            <div class="flex items-center justify-between px-2">
-                <h2 class="text-xl font-black">名單順序與維護</h2>
-                <button id="admin-done-btn" class="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl font-bold">完成返回</button>
-            </div>
-            <div class="bg-blue-50 p-5 rounded-3xl border-2 border-dashed border-blue-200">
-                <h4 class="text-xs font-bold text-blue-500 mb-3 uppercase tracking-widest text-center">從常用群組快速匯入</h4>
-                <div id="group-import-container" class="flex flex-wrap gap-2 justify-center"></div>
-            </div>
-            <div class="bg-white p-5 rounded-3xl border shadow-sm space-y-4">
-                <textarea id="batch-names-input" placeholder="職稱-姓名 (例如：主任-王大明, 藥師-李小華)" class="w-full p-4 h-24 rounded-2xl border bg-slate-50 outline-none text-sm"></textarea>
-                <div class="grid grid-cols-2 gap-2">
-                    <button id="batch-add-btn" class="bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-md">加入名單</button>
-                    <button id="clear-all-attendees-btn" class="bg-red-100 text-red-600 py-4 rounded-2xl font-bold border border-red-200">一鍵清空名單</button>
+        <!-- 活動報名視圖 -->
+        <div id="registration-view" class="space-y-6 hidden-view">
+            <div class="bg-white rounded-[3rem] shadow-xl border border-slate-200 p-8 text-center">
+                <div class="w-20 h-20 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <i data-lucide="calendar-plus" size="40"></i>
                 </div>
-            </div>
-            <div class="bg-white rounded-3xl border overflow-hidden shadow-sm">
-                <div id="admin-list-count" class="bg-slate-50 p-3 text-xs font-bold text-slate-400 border-b">目前名單</div>
-                <div id="admin-attendees-list"></div>
+                <h2 id="reg-meeting-title" class="text-3xl font-black text-slate-800 mb-2"></h2>
+                <p id="reg-meeting-info" class="text-slate-500 font-bold mb-8"></p>
+                <div id="reg-status-container" class="mb-8 hidden">
+                    <div class="p-4 bg-red-50 text-red-600 rounded-3xl border border-red-100 font-bold" id="reg-status-msg"></div>
+                </div>
+                <form id="reg-form" class="space-y-4 text-left">
+                    <div class="space-y-1">
+                        <label class="text-xs font-black text-slate-400 ml-4 uppercase">您的職稱</label>
+                        <select id="reg-title" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold focus:ring-2 focus:ring-orange-500">
+                            <option value="藥師">藥師</option><option value="主任">主任</option><option value="組長">組長</option><option value="實習藥師">實習藥師</option><option value="其他">其他</option>
+                        </select>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-xs font-black text-slate-400 ml-4 uppercase">真實姓名</label>
+                        <input id="reg-name" required placeholder="請輸入姓名" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold" />
+                    </div>
+                    <button type="submit" class="w-full bg-orange-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg btn-hover mt-4">立即報名活動</button>
+                </form>
+                <div id="reg-success" class="hidden py-10 animate-in fade-in">
+                    <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4"><i data-lucide="check" size="32"></i></div>
+                    <h3 class="text-2xl font-black text-slate-800 mb-2">報名成功！</h3>
+                    <p class="text-slate-500 font-bold">您已完成報名，開會當天請記得簽到。</p>
+                </div>
             </div>
         </div>
 
-        <!-- 群組管理 -->
-        <div id="groups-view" class="space-y-6 hidden-view">
-            <div class="bg-white p-6 rounded-3xl border shadow-sm">
-                <h2 id="group-form-title" class="text-xl font-bold mb-6 flex items-center"><i data-lucide="users" class="mr-2 text-blue-600"></i> 設定常用群組</h2>
-                <div class="space-y-4">
-                    <input id="new-group-name" placeholder="群組名稱 (如: 全科名單)" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none" />
-                    <textarea id="new-group-members" placeholder="職稱-姓名 (用逗點隔開)" class="w-full p-4 h-32 rounded-2xl border bg-slate-50 outline-none text-sm"></textarea>
-                    <div class="flex gap-2">
-                        <button id="save-group-btn" class="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg">儲存常用資料</button>
-                        <button id="cancel-group-edit-btn" class="flex-1 bg-slate-100 text-slate-500 py-4 rounded-2xl font-bold hidden">取消編輯</button>
-                    </div>
-                </div>
-            </div>
-            <div id="groups-container" class="space-y-3"></div>
-        </div>
+        <!-- 名單管理 -->
+        <div id="admin-view" class="space-y-6 hidden-view">
+            <div class="flex items-center justify-between px-2">
+               <h2 class="text-xl font-black text-slate-800">名單維護</h2>
+               <button id="admin-done-btn" class="bg-blue-50 text-blue-600 px-5 py-2 rounded-xl font-black btn-hover">完成</button>
+           </div>
+           <div class="bg-blue-50 p-5 rounded-3xl border-2 border-dashed border-blue-200">
+               <div id="group-import-container" class="flex flex-wrap gap-2 justify-center"></div>
+           </div>
+           <div class="bg-white p-5 rounded-3xl border shadow-sm space-y-4">
+               <textarea id="batch-names-input" placeholder="職稱-姓名 (用逗點隔開)" class="w-full p-4 h-24 rounded-2xl border bg-slate-50 outline-none text-sm"></textarea>
+               <div class="grid grid-cols-2 gap-3">
+                   <button id="batch-add-btn" class="bg-blue-700 text-white py-4 rounded-2xl font-black btn-hover">加入人員</button>
+                   <button id="clear-all-attendees-btn" class="bg-red-50 text-red-600 py-4 rounded-2xl font-black border border-red-100 btn-hover">清空名單</button>
+               </div>
+           </div>
+           <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+               <div id="admin-attendees-list"></div>
+           </div>
+       </div>
+
+       <!-- 群組管理 -->
+       <div id="groups-view" class="space-y-6 hidden-view">
+           <div class="bg-white p-8 rounded-[2.5rem] border shadow-sm">
+               <h2 id="group-form-title" class="text-2xl font-black mb-6 flex items-center text-slate-800"><i data-lucide="users" class="mr-3 text-blue-600"></i> 設定常用名單</h2>
+               <div class="space-y-4">
+                   <input id="new-group-name" placeholder="群組名稱" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold" />
+                   <textarea id="new-group-members" placeholder="職稱-姓名" class="w-full p-4 h-32 rounded-2xl border bg-slate-50 outline-none text-sm"></textarea>
+                   <div class="flex gap-2">
+                       <button id="save-group-btn" class="flex-[2] bg-blue-700 text-white py-4 rounded-2xl font-black shadow-lg btn-hover">儲存設定</button>
+                       <button id="cancel-group-edit-btn" class="flex-1 bg-slate-100 text-slate-500 py-4 rounded-2xl font-black hidden">取消</button>
+                   </div>
+               </div>
+           </div>
+           <div id="groups-container" class="space-y-3"></div>
+       </div>
     </main>
 
     <!-- Modals -->
     <div id="add-meeting-modal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 hidden-view">
-        <div class="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in duration-300">
-            <h2 class="text-2xl font-black mb-6">建立新會議</h2>
+        <div class="bg-white w-full max-w-lg rounded-[3rem] p-8 shadow-2xl animate-in zoom-in duration-300 overflow-y-auto max-h-[90vh]">
+            <h2 id="modal-title" class="text-2xl font-black mb-6 text-slate-800 text-center">編輯活動資訊</h2>
             <div class="space-y-4">
-                <input id="m-title" placeholder="會議主題" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none" />
+                <input id="m-title" placeholder="活動主題名稱" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold" />
                 <div class="grid grid-cols-2 gap-4">
-                    <input id="m-date" type="date" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none" />
-                    <select id="m-time" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold"></select>
+                    <input id="m-date" type="date" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-black" />
+                    <select id="m-time" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-black"></select>
                 </div>
-                <input id="m-chairman" placeholder="主席姓名" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none" />
-                <input id="m-location" value="藥劑科會議室" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold" />
+                <div class="grid grid-cols-2 gap-4">
+                    <input id="m-chairman" placeholder="主席姓名" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold" />
+                    <input id="m-location" value="藥劑科會議室" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold" />
+                </div>
+                <div class="p-5 bg-blue-50 rounded-3xl space-y-3">
+                    <h4 class="text-xs font-black text-blue-600 uppercase flex items-center"><i data-lucide="clock" class="mr-1" size="14"></i> 簽到開放時間</h4>
+                    <div class="grid grid-cols-2 gap-3">
+                        <input id="m-sign-start" type="time" class="p-3 rounded-xl border bg-white font-bold" /><input id="m-sign-end" type="time" class="p-3 rounded-xl border bg-white font-bold" />
+                    </div>
+                </div>
+                <div class="p-5 bg-orange-50 rounded-3xl space-y-3">
+                    <h4 class="text-xs font-black text-orange-600 uppercase flex items-center"><i data-lucide="calendar-plus" class="mr-1" size="14"></i> 報名開放期間</h4>
+                    <div class="grid grid-cols-2 gap-3">
+                        <input id="m-reg-start" type="date" class="w-full p-3 rounded-xl border bg-white font-bold" /><input id="m-reg-end" type="date" class="w-full p-3 rounded-xl border bg-white font-bold" />
+                    </div>
+                </div>
                 <div class="flex gap-3 pt-4">
-                    <button id="close-add-modal-btn" class="flex-1 py-4 border-2 rounded-2xl font-bold text-slate-400">取消</button>
-                    <button id="confirm-add-meeting-btn" class="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl">建立並開啟</button>
+                    <button id="close-add-modal-btn" class="flex-1 py-4 border-2 rounded-2xl font-black text-slate-400">取消</button>
+                    <button id="confirm-add-meeting-btn" class="flex-[2] bg-blue-700 text-white py-4 rounded-2xl font-black shadow-xl">儲存設定</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="qr-modal" class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 hidden-view">
-        <div class="bg-white p-8 rounded-[3rem] text-center max-w-sm w-full">
-            <h3 id="qr-meeting-title" class="text-xl font-black mb-2"></h3>
-            <p class="text-sm text-slate-400 mb-6 font-bold">請掃描開啟簽到網頁</p>
-            <div id="qrcode-container" class="bg-white p-4 border-8 border-slate-50 rounded-3xl inline-block mb-6 shadow-inner"></div>
-            <button id="close-qr-modal-btn" class="w-full bg-slate-100 py-4 rounded-2xl font-bold text-slate-600">關閉</button>
-        </div>
-    </div>
-
+    <!-- 簽名板 Modal (優化滑動與視覺) -->
     <div id="signature-modal" class="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-0 md:p-4 hidden-view">
-        <div class="bg-white w-full h-full md:h-auto md:max-w-xl md:rounded-[3rem] flex flex-col shadow-2xl overflow-hidden animate-in fade-in duration-200">
-            <div class="p-6 border-b flex justify-between items-center bg-slate-50 shadow-sm">
-                <div id="sig-info">
-                    <h2 class="text-2xl font-black text-slate-800">手寫簽名簽到</h2>
-                    <p class="text-sm text-slate-500 mt-1">請 <span id="sig-title-label" class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-bold mr-1"></span> <span id="sig-name" class="text-slate-900 font-black text-xl underline"></span> 簽名</p>
+        <div class="sig-modal-content bg-white w-full h-full md:h-auto md:max-w-xl md:rounded-[4rem] flex flex-col shadow-2xl relative animate-in zoom-in duration-300">
+            <div class="sig-header p-6 border-b flex justify-between items-center bg-slate-50 sticky top-0 z-10">
+                <div>
+                    <h2 class="text-2xl font-black text-slate-800">數位簽名</h2>
+                    <div class="mt-2 flex items-center"><span id="sig-title-label" class="bg-blue-700 text-white px-2 py-0.5 rounded-lg font-black text-[10px] mr-2"></span><span id="sig-name" class="text-slate-900 font-black text-2xl underline"></span></div>
                 </div>
-                <button id="close-sig-modal-btn" class="p-3 bg-white border shadow-sm rounded-full active:scale-90"><i data-lucide="x"></i></button>
+                <button id="close-sig-modal-btn" class="p-3 bg-white border rounded-full shadow-sm active:scale-90"><i data-lucide="x"></i></button>
             </div>
-            <div id="sig-observer-fields" class="p-6 bg-slate-100 space-y-4 hidden-view">
+            
+            <div id="sig-observer-fields" class="p-6 bg-blue-50 space-y-4 hidden-view border-b">
                 <div class="grid grid-cols-2 gap-4">
-                    <input id="sig-obs-name" placeholder="您的姓名" class="w-full p-4 rounded-2xl border-2 border-white focus:border-blue-500 outline-none font-bold shadow-sm" />
-                    <input id="sig-obs-dept" placeholder="單位/科別" class="w-full p-4 rounded-2xl border-2 border-white focus:border-blue-500 outline-none font-bold shadow-sm" />
+                    <input id="sig-obs-name" placeholder="您的姓名" class="w-full p-4 rounded-2xl border-2 border-white outline-none font-bold shadow-sm" />
+                    <input id="sig-obs-dept" placeholder="單位" class="w-full p-4 rounded-2xl border-2 border-white outline-none font-bold shadow-sm" />
                 </div>
             </div>
-            <div class="flex-1 bg-slate-100 p-4 flex flex-col">
-                <div id="canvas-wrapper" class="flex-1 min-h-[350px] bg-white rounded-[2.5rem] border-4 border-dashed border-slate-200 relative overflow-hidden flex flex-col shadow-inner">
+
+            <div class="sig-body p-6 flex flex-col">
+                <div id="canvas-wrapper" class="min-h-[350px] bg-white rounded-[3rem] border-4 border-dashed border-slate-200 relative overflow-hidden flex flex-col shadow-inner">
                     <canvas id="signature-canvas" class="signature-pad-canvas"></canvas>
-                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-5 select-none"><span class="text-6xl font-black rotate-[-15deg]">SIGN HERE</span></div>
+                </div>
+                
+                <!-- 滑動提示箭頭 (手機窄螢幕顯示) -->
+                <div class="flex flex-col items-center justify-center py-6 text-slate-400 md:hidden scroll-hint">
+                    <p class="text-[10px] font-black uppercase tracking-widest mb-1">往下查看確認按鈕</p>
+                    <i data-lucide="chevron-down" size="20"></i>
                 </div>
             </div>
-            <div class="p-6 bg-white border-t flex gap-4 shadow-2xl">
-                <button id="clear-sig-btn" class="flex-1 py-4 border-2 rounded-2xl font-black text-slate-400">清除重簽</button>
-                <button id="save-sig-btn" class="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl active:scale-95 transition-all">確認送出</button>
+            
+            <div class="sig-footer p-6 bg-white border-t flex gap-4 mt-auto">
+                <button id="clear-sig-btn" class="flex-1 py-4 border-2 rounded-2xl font-black text-slate-400">清除</button>
+                <button id="save-sig-btn" class="flex-[2] bg-blue-800 text-white py-4 rounded-2xl font-black text-lg shadow-xl">確認簽到</button>
             </div>
         </div>
     </div>
 
-    <!-- 隱藏的 PDF 分頁專用範本 -->
+    <!-- QR Code Modal -->
+    <div id="qr-modal" class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 hidden-view">
+        <div class="bg-white p-10 rounded-[4rem] text-center max-w-sm w-full shadow-2xl">
+            <h3 id="qr-meeting-title" class="text-xl font-black mb-2 text-slate-800"></h3>
+            <p id="qr-type-label" class="text-xs text-slate-400 mb-8 font-black uppercase tracking-widest"></p>
+            <div id="qrcode-container" class="bg-white p-4 border-8 border-slate-50 rounded-[2rem] inline-block mb-8 shadow-inner"></div>
+            <button id="close-qr-modal-btn" class="w-full bg-slate-100 py-4 rounded-2xl font-black text-slate-600">關閉</button>
+        </div>
+    </div>
+
+    <!-- PDF Template -->
     <div id="pdf-export-container">
         <div id="pdf-page-template" class="w-[850px] bg-white p-12 font-serif text-black">
-            <!-- 這邊只放表頭資訊，表格內容會動態填入 -->
-            <div class="text-center mb-6">
-                <h1 class="text-3xl font-bold border-b-2 border-black pb-2 inline-block">衛生福利部豐原醫院</h1>
-                <h2 id="pdf-header-title" class="text-2xl font-bold mt-4">會議簽到單</h2>
-                <div class="mt-6 text-left space-y-2 text-lg font-bold">
-                    <p id="pdf-header-time"></p>
-                    <p id="pdf-header-location"></p>
-                    <p id="pdf-header-chairman"></p>
+            <div class="text-center mb-10">
+                <h1 class="text-4xl font-bold border-b-4 border-black pb-3 inline-block">豐原醫院會議活動簽到單</h1>
+                <h2 id="pdf-header-title" class="text-2xl font-bold mt-6 py-2 px-6 bg-slate-100 rounded-lg inline-block text-black"></h2>
+                <div class="grid grid-cols-2 gap-4 mt-8 text-left text-lg font-bold text-black">
+                    <div class="space-y-1 border-l-4 border-black pl-4">
+                        <p id="pdf-header-time"></p>
+                        <p id="pdf-header-location"></p>
+                    </div>
+                    <div class="flex items-end justify-end"><p id="pdf-header-chairman" class="border-b-2 border-black pb-1"></p></div>
                 </div>
             </div>
-            <div class="text-lg font-bold mb-2">簽到表：</div>
-            <table class="w-full border-collapse border-2 border-black text-center text-lg">
-                <thead><tr class="bg-gray-100 h-12 font-bold text-black">
-                    <th class="border-2 border-black p-2 w-[15%]">職 稱</th>
-                    <th class="border-2 border-black p-2 w-[25%]">姓 名</th>
-                    <th class="border-2 border-black p-2 w-[40%]">簽 名</th>
-                    <th class="border-2 border-black p-2 w-[20%]">備 註</th>
+            <table class="pdf-table w-full border-collapse text-center text-lg font-bold text-black">
+                <thead><tr class="h-14">
+                    <th class="w-[15%]">職稱</th><th class="w-[25%]">姓名</th><th class="w-[40%]">手寫簽名</th><th class="w-[20%]">備註</th>
                 </tr></thead>
                 <tbody class="pdf-table-body text-black"></tbody>
             </table>
-            <div class="pdf-footer-stats mt-6 text-lg font-bold border-t-2 border-black pt-4 text-black hidden"></div>
-            <div class="mt-10 text-right text-sm text-gray-400 italic">列印日期：<span class="pdf-print-date"></span></div>
+            <div class="pdf-footer-stats mt-10 p-6 border-2 border-black rounded-2xl hidden text-black"></div>
         </div>
     </div>
 
@@ -270,6 +353,7 @@
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, doc, onSnapshot, updateDoc, addDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+        // 配置
         const firebaseConfig = {
             apiKey: "AIzaSyDiimflWIVYlQ7YX27cX7KzFhF_nAG2OcY",
             authDomain: "fyh-pharmacy-v2.firebaseapp.com",
@@ -280,38 +364,52 @@
             appId: "1:965995209196:web:e037c9ccf61d5cdeb6e0c9",
             measurementId: "G-RM379DM93Q"
         };
-        
+        const ADMIN_PASS = "8888";
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
         let meetings = [], attendees = [], observers = [], groups = [];
         let currentMeeting = null, signaturePad = null, activeSignPerson = null, editingGroupId = null;
+        let isEditingMeeting = false;
+
+        // 密碼檢查輔助
+        const checkPass = () => {
+            const p = prompt("請輸入管理員密碼：");
+            if (p === ADMIN_PASS) return true;
+            if (p !== null) alert("密碼錯誤，拒絕存取。");
+            return false;
+        };
 
         window.onload = () => {
             lucide.createIcons();
             initTimeSlots();
             initSignaturePad();
             bindEventListeners();
-            signInAnonymously(auth).then(() => startDatabaseListeners());
+            signInAnonymously(auth).then(() => startListeners());
+        };
+
+        const isTimeActive = (dateStr, s, e) => {
+            const n = new Date();
+            const today = n.getFullYear() + "-" + (n.getMonth() + 1).toString().padStart(2, '0') + "-" + n.getDate().toString().padStart(2, '0');
+            if (dateStr !== today) return false;
+            const time = n.getHours().toString().padStart(2, '0') + ":" + n.getMinutes().toString().padStart(2, '0');
+            return time >= (s||"00:00") && time <= (e||"23:59");
         };
 
         function initTimeSlots() {
             const s = document.getElementById('m-time');
-            for(let h=8; h<=17; h++) {
+            for(let h=8; h<=19; h++) {
                 const hh = h < 10 ? `0${h}` : h;
                 ['00', '30'].forEach(m => {
-                    const opt = document.createElement('option');
-                    opt.value = `${hh}:${m}`; opt.textContent = `${hh}:${m}`;
-                    s.appendChild(opt);
+                    const opt = document.createElement('option'); opt.value = `${hh}:${m}`; opt.textContent = `${hh}:${m}`; s.appendChild(opt);
                 });
             }
-            const last = document.createElement('option'); last.value="18:00"; last.textContent="18:00"; s.appendChild(last);
         }
 
         function initSignaturePad() {
             const canvas = document.getElementById('signature-canvas');
-            signaturePad = new SignaturePad(canvas, { backgroundColor: 'rgb(255, 255, 255)', penColor: 'rgb(0, 0, 0)', minWidth: 2.5, maxWidth: 5.5 });
+            signaturePad = new SignaturePad(canvas, { backgroundColor: 'rgb(255, 255, 255)', penColor: 'rgb(0, 0, 0)', minWidth: 2.8, maxWidth: 6.0 });
         }
 
         function calibrateCanvas() {
@@ -324,373 +422,303 @@
             signaturePad.clear();
         }
 
-        function startDatabaseListeners() {
+        function startListeners() {
             onSnapshot(collection(db, 'fyh_meetings'), snapshot => {
                 meetings = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                 renderMeetings();
                 document.getElementById('loading-view').classList.add('hidden-view');
-                const mid = new URLSearchParams(window.location.search).get('m');
-                if (mid && !currentMeeting) {
-                    const m = meetings.find(x => x.id === mid);
-                    if (m) openMeetingDetails(m);
-                }
+                const mid = new URLSearchParams(window.location.search).get('m'), reg = new URLSearchParams(window.location.search).get('reg');
+                if (mid && !currentMeeting) { const m = meetings.find(x => x.id === mid); if (m) openMeeting(m); }
+                else if (reg && !currentMeeting) { const m = meetings.find(x => x.id === reg); if (m) openReg(m); }
+                else if (!currentMeeting && !reg) showUI('list');
             });
             onSnapshot(collection(db, 'fyh_groups'), snapshot => {
                 groups = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                renderGroupsList();
+                renderGroups();
             });
         }
 
         function startDetailListeners(mid) {
             onSnapshot(collection(db, `fyh_attendees_${mid}`), snapshot => {
                 attendees = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                renderAttendeesList();
-                updateAttendanceStats();
-                if (!document.getElementById('admin-view').classList.contains('hidden-view')) renderAdminPersonnelList();
+                renderAttendees(); updateStats();
+                if (!document.getElementById('admin-view').classList.contains('hidden-view')) renderAdminList();
             });
             onSnapshot(collection(db, `fyh_observers_${mid}`), snapshot => {
                 observers = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                renderObserversList();
+                renderObservers();
             });
-            onSnapshot(doc(db, 'fyh_meetings', mid), d => {
-                if (d.exists()) { currentMeeting = { id: d.id, ...d.data() }; updateHeaderInfo(); }
-            });
+            onSnapshot(doc(db, 'fyh_meetings', mid), d => { if (d.exists()) { currentMeeting = { id: d.id, ...d.data() }; updateHeader(); } });
         }
 
         function showUI(v) {
             document.querySelectorAll('main > div').forEach(div => div.classList.add('hidden-view'));
             document.getElementById(`${v}-view`).classList.remove('hidden-view');
-            document.getElementById('back-btn').classList.toggle('hidden', v === 'list');
+            document.getElementById('back-btn').classList.toggle('hidden', v === 'list' || v === 'registration');
             document.getElementById('header-actions').classList.toggle('hidden', v !== 'list');
             lucide.createIcons();
+            window.scrollTo(0,0);
         }
 
         function renderMeetings() {
-            const c = document.getElementById('meetings-container');
-            c.innerHTML = meetings.length === 0 ? '<div class="text-center py-10 text-slate-400 bg-white rounded-3xl border border-dashed">目前尚無會議。</div>' : '';
-            meetings.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).forEach(m => {
-                const div = document.createElement('div');
-                div.className = "bg-white rounded-2xl shadow-sm border p-5 flex items-center justify-between cursor-pointer hover:border-blue-400 transition-all";
-                div.innerHTML = `<div class="flex-1" onclick="window.goM('${m.id}')"><h3 class="font-bold text-lg text-slate-800">${m.title}</h3><div class="flex gap-4 text-sm mt-2 font-bold"><span class="text-blue-600">📅 ${m.date}</span><span class="text-slate-400">📍 ${m.location}</span></div></div><button class="p-2 text-slate-200 hover:text-red-500" onclick="window.delM('${m.id}')"><i data-lucide="trash-2" size="20"></i></button>`;
+            const c = document.getElementById('meetings-container'); c.innerHTML = meetings.length === 0 ? '<div class="py-20 text-center text-slate-300 font-bold">目前尚無活動</div>' : '';
+            meetings.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0)).forEach(m => {
+                const div = document.createElement('div'); div.className = "bg-white rounded-3xl border p-6 flex items-center justify-between cursor-pointer btn-hover";
+                div.innerHTML = `<div class="flex-1" onclick="window.goM('${m.id}')"><h3 class="font-black text-xl text-slate-800">${m.title}</h3><div class="flex gap-4 text-sm mt-3 font-bold text-slate-400"><span>📅 ${m.date}</span><span>📍 ${m.location}</span></div></div><button class="p-3 text-slate-200 hover:text-red-500" onclick="window.delM('${m.id}')"><i data-lucide="trash-2" size="22"></i></button>`;
                 c.appendChild(div);
             });
             lucide.createIcons();
         }
+        window.goM = (id) => { const m = meetings.find(x => x.id === id); if(m) openMeeting(m); };
+        window.delM = async (id) => { if(checkPass() && confirm("確定刪除此活動？")) await deleteDoc(doc(db, 'fyh_meetings', id)); };
 
-        window.goM = (id) => { const m = meetings.find(x => x.id === id); if(m) openMeetingDetails(m); };
-        window.delM = async (id) => { if(confirm("確定刪除此會議？資料無法復原。")) await deleteDoc(doc(db, 'fyh_meetings', id)); };
+        function openMeeting(m) { currentMeeting = m; startDetailListeners(m.id); showUI('detail'); }
+        function openReg(m) {
+            currentMeeting = m; showUI('registration');
+            document.getElementById('reg-meeting-title').textContent = m.title;
+            const active = (new Date().toISOString().split('T')[0] >= (m.regStart||"0000") && new Date().toISOString().split('T')[0] <= (m.regEnd||"9999"));
+            document.getElementById('reg-status-container').classList.toggle('hidden', active);
+            if (!active) document.getElementById('reg-status-msg').textContent = "本活動報名期間已結束";
+            document.getElementById('reg-form').classList.toggle('hidden', !active);
+        }
 
-        function openMeetingDetails(m) { currentMeeting = m; startDetailListeners(m.id); showUI('detail'); }
-        function updateHeaderInfo() {
+        function updateHeader() {
             document.getElementById('detail-title').textContent = currentMeeting.title;
             document.getElementById('detail-date').textContent = currentMeeting.date;
             document.getElementById('detail-time').textContent = currentMeeting.time;
             document.getElementById('detail-location').textContent = currentMeeting.location;
             document.getElementById('detail-chairman').textContent = currentMeeting.chairman || '(未設定)';
+            const active = isTimeActive(currentMeeting.date, currentMeeting.signStart, currentMeeting.signEnd);
+            document.getElementById('sign-time-warning').classList.toggle('hidden', active);
+            document.getElementById('allowed-sign-range').textContent = `${currentMeeting.signStart||"00:00"} ~ ${currentMeeting.signEnd||"23:59"}`;
         }
 
-        function getSortedAttendees() { return attendees.sort((a, b) => (a.order || 0) - (b.order || 0)); }
-
-        function renderAttendeesList() {
-            const c = document.getElementById('attendees-container');
-            c.innerHTML = '';
-            getSortedAttendees().forEach(p => {
-                const isPresent = p.status === 'present';
-                const div = document.createElement('div');
-                div.className = `person-card bg-white p-4 rounded-2xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isPresent ? 'border-emerald-500 bg-emerald-50/10' : 'border-slate-100 shadow-sm'}`;
-                
-                let signArea = '';
-                if (isPresent) {
-                    signArea = `
-                        <div class="flex items-center gap-3">
-                            <img src="${p.signature}" class="h-10 w-24 object-contain filter drop-shadow-sm">
-                            <button class="bg-slate-100 text-slate-400 p-2 rounded-xl hover:text-blue-500 text-xs font-bold" onclick="window.openSignPopup('attendee', '${p.id}')">重簽</button>
-                        </div>`;
-                } else {
-                    signArea = `
-                        <div class="flex gap-2">
-                            <button class="bg-blue-600 text-white px-5 py-2 rounded-xl font-bold text-sm shadow shadow-blue-200 active:scale-95" onclick="window.openSignPopup('attendee', '${p.id}')">簽名</button>
-                            <select class="text-xs border rounded-lg p-2 font-bold bg-slate-50" onchange="window.setS('${p.id}', this.value)">
-                                <option value="none">-- 狀態 --</option>
-                                <option value="duty" ${p.status==='duty'?'selected':''}>值班</option>
-                                <option value="vacation" ${p.status==='vacation'?'selected':''}>休假</option>
-                                <option value="leave" ${p.status==='leave'?'selected':''}>請假</option>
-                            </select>
-                        </div>`;
-                }
-
-                div.innerHTML = `<div class="flex items-center space-x-3"><div class="w-10 h-10 rounded-full flex items-center justify-center ${isPresent?'bg-emerald-500 text-white shadow-lg shadow-emerald-100':'bg-slate-100 text-slate-400'}"><i data-lucide="${isPresent?'check-circle-2':'user'}"></i></div><div><div class="flex items-center gap-2"><span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-bold uppercase tracking-wider">${p.title}</span><p class="font-bold text-slate-800 text-lg">${p.name}</p></div>${p.status!=='none'&&p.status!=='present'?`<span class="text-xs font-bold text-red-500 italic">狀態：${p.status==='duty'?'值班':p.status==='vacation'?'休假':'請假'}</span>`:''}</div></div>${signArea}`;
+        function renderAttendees() {
+            const c = document.getElementById('attendees-container'); c.innerHTML = '';
+            attendees.sort((a,b) => (a.order||0)-(b.order||0)).forEach(p => {
+                const ok = p.status === 'present';
+                const div = document.createElement('div'); div.className = `bg-white p-5 rounded-3xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${ok ? 'border-emerald-500 bg-emerald-50/10' : 'border-slate-100 shadow-sm'}`;
+                let action = ok ? `<div class="flex items-center gap-2"><img src="${p.signature}" class="h-12 w-32 object-contain bg-white rounded-lg p-1 border shadow-inner"><div class="flex flex-col gap-1"><button class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-[10px] font-black" onclick="window.openSignPopup('attendee', '${p.id}')">重簽</button><button class="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-[10px] font-black" onclick="window.cancelSign('${p.id}')">取消</button></div></div>` : 
+                                 `<div class="flex gap-2"><button class="bg-blue-700 text-white px-6 py-3 rounded-2xl font-black text-sm" onclick="window.openSignPopup('attendee', '${p.id}')">簽名</button><select class="text-xs border-2 rounded-2xl px-3 bg-slate-50 font-black outline-none" onchange="window.setS('${p.id}', this.value)"><option value="none">-- 備註 --</option><option value="duty" ${p.status==='duty'?'selected':''}>值班</option><option value="vacation" ${p.status==='vacation'?'selected':''}>休假</option><option value="leave" ${p.status==='leave'?'selected':''}>請假</option></select></div>`;
+                div.innerHTML = `<div class="flex items-center space-x-4"><div class="w-12 h-12 rounded-2xl flex items-center justify-center ${ok?'bg-emerald-500 text-white':'bg-slate-100 text-slate-400'}"><i data-lucide="${ok?'check-circle-2':'user'}" size="24"></i></div><div><div class="flex items-center gap-2"><span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-black">${p.title}</span><p class="font-black text-slate-800 text-xl">${p.name}</p></div>${p.status!=='none'&&p.status!=='present'?`<span class="text-[11px] font-black text-white bg-red-500 px-2 py-0.5 rounded-full mt-1 inline-block">狀態：${p.status==='duty'?'值班':p.status==='vacation'?'休假':'請假'}</span>`:''}</div></div>${action}`;
                 c.appendChild(div);
             });
             lucide.createIcons();
         }
 
-        function renderObserversList() {
-            const c = document.getElementById('observers-container');
-            c.innerHTML = observers.length === 0 ? '<div class="text-center py-6 text-slate-400 italic text-sm border-2 border-dashed rounded-2xl">目前無列席人員</div>' : '';
+        function renderObservers() {
+            const c = document.getElementById('observers-container'); c.innerHTML = observers.length === 0 ? '<div class="py-8 text-center text-slate-300 font-bold text-sm">無列席人員</div>' : '';
             observers.forEach(o => {
-                const div = document.createElement('div');
-                div.className = "bg-white p-4 rounded-2xl border-2 border-orange-100 flex items-center justify-between shadow-sm";
-                div.innerHTML = `<div class="flex items-center space-x-3"><div class="w-10 h-10 rounded-full bg-orange-100 text-orange-600 text-xs font-black flex items-center justify-center">列席</div><p class="font-bold text-slate-800">${o.name} <span class="text-xs text-slate-400 font-normal">(${o.department})</span></p></div><img src="${o.signature}" class="h-10 w-24 object-contain">`;
+                const div = document.createElement('div'); div.className = "bg-white p-5 rounded-3xl border flex items-center justify-between shadow-sm";
+                div.innerHTML = `<div class="flex items-center space-x-3"><div class="w-10 h-10 rounded-xl bg-orange-500 text-white text-[10px] font-black flex items-center justify-center">Guest</div><div><p class="font-black text-slate-800">${o.name}</p><p class="text-[10px] text-slate-400 font-bold">${o.department}</p></div></div><img src="${o.signature}" class="h-12 w-32 object-contain bg-white rounded-lg p-1 border shadow-inner">`;
                 c.appendChild(div);
             });
         }
 
-        function updateAttendanceStats() {
+        function updateStats() {
             const count = attendees.filter(a => a.status === 'present').length;
             const rate = attendees.length > 0 ? Math.round((count / attendees.length) * 100) : 0;
-            document.getElementById('stat-rate').textContent = `${rate}%`;
-            document.getElementById('stat-count').textContent = `${count} / ${attendees.length}`;
+            document.getElementById('stat-rate').textContent = `${rate}%`; document.getElementById('stat-count').textContent = `${count} / ${attendees.length}`;
         }
 
+        // 重要：修復取消功能與設定
         window.setS = async (id, s) => { await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id), { status: s, signed: s==='present', signature: null }); };
-        
+        window.cancelSign = async (id) => { if(confirm("確定取消簽到？")) await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id), { status: 'none', signed: false, signature: null, signedAt: null }); };
+
         window.openSignPopup = (type, id) => {
-            activeSignPerson = { type, id };
-            document.body.classList.add('lock-scroll');
+            activeSignPerson = { type, id }; document.body.classList.add('lock-scroll');
             document.getElementById('signature-modal').classList.remove('hidden-view');
-            const obs = document.getElementById('sig-observer-fields');
-            const info = document.getElementById('sig-info');
+            const obs = document.getElementById('sig-observer-fields'); const info = document.getElementById('sig-info');
             if (type === 'attendee') {
-                const p = attendees.find(x => x.id === id);
-                document.getElementById('sig-name').textContent = p.name;
-                document.getElementById('sig-title-label').textContent = p.title;
+                const p = attendees.find(x => x.id === id); document.getElementById('sig-name').textContent = p.name; document.getElementById('sig-title-label').textContent = p.title;
                 obs.classList.add('hidden-view'); info.classList.remove('hidden-view');
-            } else {
-                info.classList.add('hidden-view'); obs.classList.remove('hidden-view');
-                document.getElementById('sig-obs-name').value = '';
-                document.getElementById('sig-obs-dept').value = '';
-            }
-            setTimeout(() => { calibrateCanvas(); signaturePad.clear(); }, 100);
-        };
-
-        function closeSignPopup() { document.getElementById('signature-modal').classList.add('hidden-view'); document.body.classList.remove('lock-scroll'); }
-
-        window.moveAttendee = async (id, direction) => {
-            const sorted = getSortedAttendees();
-            const index = sorted.findIndex(p => p.id === id);
-            if (index === -1) return;
-            const targetIndex = index + direction;
-            if (targetIndex < 0 || targetIndex >= sorted.length) return;
-            const personA = sorted[index], personB = sorted[targetIndex];
-            const orderA = personA.order || 0, orderB = personB.order || 0;
-            await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, personA.id), { order: orderB });
-            await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, personB.id), { order: orderA });
+            } else { obs.classList.remove('hidden-view'); info.classList.add('hidden-view'); }
+            setTimeout(() => calibrateCanvas(), 200);
         };
 
         function bindEventListeners() {
             document.getElementById('back-btn').onclick = () => { window.history.pushState({}, '', window.location.pathname); showUI('list'); currentMeeting = null; };
-            document.getElementById('nav-groups-btn').onclick = () => { editingGroupId = null; showUI('groups'); resetGroupFormState(); };
-            document.getElementById('nav-admin-btn').onclick = () => { showUI('admin'); renderImportButtons(); renderAdminPersonnelList(); };
+            document.getElementById('nav-groups-btn').onclick = () => { if(checkPass()) { editingGroupId = null; showUI('groups'); resetGrp(); } };
+            document.getElementById('nav-admin-btn').onclick = () => { showUI('admin'); renderImports(); renderAdminList(); };
             document.getElementById('admin-done-btn').onclick = () => showUI('detail');
-            document.getElementById('open-add-meeting-btn').onclick = () => { document.getElementById('add-meeting-modal').classList.remove('hidden-view'); document.getElementById('m-date').value = new Date().toISOString().split('T')[0]; };
+            document.getElementById('main-edit-btn').onclick = () => { if(checkPass()) openEditModal(); };
+            document.getElementById('open-add-meeting-btn').onclick = () => { if(checkPass()) openAddModal(); };
             document.getElementById('close-add-modal-btn').onclick = () => document.getElementById('add-meeting-modal').classList.add('hidden-view');
             
             document.getElementById('confirm-add-meeting-btn').onclick = async () => {
-                const title = document.getElementById('m-title').value, date = document.getElementById('m-date').value, time = document.getElementById('m-time').value, chairman = document.getElementById('m-chairman').value, location = document.getElementById('m-location').value;
-                if (!title || !date) return alert('主題與日期必填。');
-                await addDoc(collection(db, 'fyh_meetings'), { title, date, time, chairman, location, createdAt: serverTimestamp() });
-                document.getElementById('add-meeting-modal').classList.add('hidden-view'); document.getElementById('m-title').value = '';
+                const data = {
+                    title: document.getElementById('m-title').value, date: document.getElementById('m-date').value, time: document.getElementById('m-time').value,
+                    chairman: document.getElementById('m-chairman').value, location: document.getElementById('m-location').value,
+                    signStart: document.getElementById('m-sign-start').value, signEnd: document.getElementById('m-sign-end').value,
+                    regStart: document.getElementById('m-reg-start').value, regEnd: document.getElementById('m-reg-end').value
+                };
+                if (!data.title || !data.date) return alert('必填！');
+                if (isEditingMeeting) await updateDoc(doc(db, 'fyh_meetings', currentMeeting.id), data);
+                else { data.createdAt = serverTimestamp(); await addDoc(collection(db, 'fyh_meetings'), data); }
+                document.getElementById('add-meeting-modal').classList.add('hidden-view');
             };
 
-            document.getElementById('batch-add-btn').onclick = async () => {
-                const input = document.getElementById('batch-names-input').value; if (!input) return;
-                const names = input.split(/[,，\n]/).map(n => n.trim()).filter(n => n);
-                let maxOrder = attendees.length > 0 ? Math.max(...attendees.map(a => a.order || 0)) : 0;
-                for (const raw of names) {
-                    maxOrder++;
-                    let title = '藥師', name = raw; if (raw.includes('-')) [title, name] = raw.split('-');
-                    await addDoc(collection(db, `fyh_attendees_${currentMeeting.id}`), { title, name, signed: false, status: 'none', createdAt: serverTimestamp(), order: maxOrder });
-                }
-                document.getElementById('batch-names-input').value = '';
+            document.getElementById('reg-form').onsubmit = async (e) => {
+                e.preventDefault(); const n = document.getElementById('reg-name').value.trim();
+                let max = attendees.length > 0 ? Math.max(...attendees.map(a => a.order || 0)) : 0;
+                await addDoc(collection(db, `fyh_attendees_${currentMeeting.id}`), { title: document.getElementById('reg-title').value, name: n, signed: false, status: 'none', createdAt: serverTimestamp(), order: max + 1 });
+                document.getElementById('reg-form').classList.add('hidden'); document.getElementById('reg-success').classList.remove('hidden');
             };
 
-            document.getElementById('clear-all-attendees-btn').onclick = async () => {
-                if (attendees.length && confirm("確定清除全部名單？")) { for (const p of attendees) { await deleteDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, p.id)); } }
-            };
-
-            document.getElementById('close-sig-modal-btn').onclick = closeSignPopup;
-            document.getElementById('clear-sig-btn').onclick = () => signaturePad.clear();
             document.getElementById('save-sig-btn').onclick = async () => {
                 if (signaturePad.isEmpty()) return alert('請先簽名');
-                const data = signaturePad.toDataURL('image/png', 0.5); // 壓縮圖片減少大小
-                if (activeSignPerson.type === 'attendee') {
-                    await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, activeSignPerson.id), { signed: true, status: 'present', signature: data, signedAt: new Date().toISOString() });
-                } else {
-                    const n = document.getElementById('sig-obs-name').value, d = document.getElementById('sig-obs-dept').value;
-                    if (!n || !d) return alert('請填寫姓名與單位');
+                const data = signaturePad.toDataURL('image/png', 0.6);
+                if (activeSignPerson.type === 'attendee') await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, activeSignPerson.id), { signed: true, status: 'present', signature: data, signedAt: new Date().toISOString() });
+                else {
+                    const n = document.getElementById('sig-obs-name').value, d = document.getElementById('sig-obs-dept').value; if (!n || !d) return alert('資訊不全');
                     await addDoc(collection(db, `fyh_observers_${currentMeeting.id}`), { name: n, department: d, signature: data, signedAt: new Date().toISOString() });
                 }
-                closeSignPopup();
+                document.getElementById('signature-modal').classList.add('hidden-view'); document.body.classList.remove('lock-scroll');
             };
 
-            document.getElementById('show-qr-btn').onclick = () => {
-                const c = document.getElementById('qrcode-container'); c.innerHTML = '';
-                const url = `https://fyhpharm1153.github.io/admin/meetingsign.html?m=${currentMeeting.id}`;
-                new QRCode(c, { text: url, width: 250, height: 250, correctLevel: QRCode.CorrectLevel.H });
-                document.getElementById('qr-meeting-title').textContent = currentMeeting.title;
-                document.getElementById('qr-modal').classList.remove('hidden-view');
-            };
+            document.getElementById('show-qr-btn').onclick = () => showQR('sign');
+            document.getElementById('show-reg-qr-btn').onclick = () => showQR('reg');
             document.getElementById('close-qr-modal-btn').onclick = () => document.getElementById('qr-modal').classList.add('hidden-view');
-
+            document.getElementById('close-sig-modal-btn').onclick = () => { document.getElementById('signature-modal').classList.add('hidden-view'); document.body.classList.remove('lock-scroll'); };
+            document.getElementById('clear-sig-btn').onclick = () => signaturePad.clear();
             document.getElementById('pdf-btn').onclick = exportPDF;
             document.getElementById('excel-btn').onclick = exportExcel;
             
-            document.getElementById('edit-chairman-btn').onclick = async () => {
-                const n = prompt('修改會議主席：', currentMeeting.chairman); if (n !== null) await updateDoc(doc(db, 'fyh_meetings', currentMeeting.id), { chairman: n });
+            document.getElementById('batch-add-btn').onclick = async () => {
+                const input = document.getElementById('batch-names-input').value; if (!input) return;
+                const names = input.split(/[,，\n]/).map(n => n.trim()).filter(n => n);
+                let max = attendees.length > 0 ? Math.max(...attendees.map(a => a.order || 0)) : 0;
+                for (const raw of names) { max++; let title = '藥師', name = raw; if (raw.includes('-')) [title, name] = raw.split('-'); await addDoc(collection(db, `fyh_attendees_${currentMeeting.id}`), { title, name, signed: false, status: 'none', createdAt: serverTimestamp(), order: max }); }
+                document.getElementById('batch-names-input').value = '';
             };
+
+            document.getElementById('clear-all-attendees-btn').onclick = async () => { if (checkPass() && confirm("確定清空名單？")) { for (const p of attendees) { await deleteDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, p.id)); } } };
 
             document.getElementById('save-group-btn').onclick = async () => {
-                const name = document.getElementById('new-group-name').value, members = document.getElementById('new-group-members').value.split(/[,，\n]/).map(n => n.trim()).filter(n => n);
-                if (!name || members.length===0) return alert('請填寫完整名稱與名單。');
-                if (editingGroupId) { await updateDoc(doc(db, 'fyh_groups', editingGroupId), { name, members }); editingGroupId = null; } 
-                else { await addDoc(collection(db, 'fyh_groups'), { name, members, createdAt: serverTimestamp() }); }
-                resetGroupFormState();
+                const n = document.getElementById('new-group-name').value, m = document.getElementById('new-group-members').value.split(/[,，\n]/).map(x => x.trim()).filter(x => x);
+                if (!n || m.length===0) return alert('不全');
+                if (editingGroupId) await updateDoc(doc(db, 'fyh_groups', editingGroupId), { name: n, members: m });
+                else await addDoc(collection(db, 'fyh_groups'), { name: n, members: m, createdAt: serverTimestamp() });
+                resetGrp();
             };
-            document.getElementById('cancel-group-edit-btn').onclick = () => { editingGroupId = null; resetGroupFormState(); };
+            document.getElementById('cancel-group-edit-btn').onclick = () => { editingGroupId = null; resetGrp(); };
         }
 
-        function resetGroupFormState() {
+        function openAddModal() {
+            isEditingMeeting = false; document.getElementById('modal-title').textContent = "建立活動";
+            document.getElementById('m-title').value = ''; document.getElementById('m-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('m-chairman').value = ''; document.getElementById('m-location').value = '藥劑科會議室';
+            document.getElementById('m-sign-start').value = '08:00'; document.getElementById('m-sign-end').value = '17:30';
+            document.getElementById('m-reg-start').value = new Date().toISOString().split('T')[0]; document.getElementById('m-reg-end').value = '';
+            document.getElementById('add-meeting-modal').classList.remove('hidden-view');
+        }
+
+        function openEditModal() {
+            isEditingMeeting = true; document.getElementById('modal-title').textContent = "編輯活動資訊";
+            document.getElementById('m-title').value = currentMeeting.title; document.getElementById('m-date').value = currentMeeting.date;
+            document.getElementById('m-time').value = currentMeeting.time; document.getElementById('m-chairman').value = currentMeeting.chairman;
+            document.getElementById('m-location').value = currentMeeting.location; document.getElementById('m-sign-start').value = currentMeeting.signStart;
+            document.getElementById('m-sign-end').value = currentMeeting.signEnd; document.getElementById('m-reg-start').value = currentMeeting.regStart;
+            document.getElementById('m-reg-end').value = currentMeeting.regEnd;
+            document.getElementById('add-meeting-modal').classList.remove('hidden-view');
+        }
+
+        function showQR(type) {
+            const c = document.getElementById('qrcode-container'); c.innerHTML = '';
+            const url = `https://fyhpharm1153.github.io/admin/meetingsign.html?${type === 'sign' ? 'm' : 'reg'}=${currentMeeting.id}`;
+            new QRCode(c, { text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
+            document.getElementById('qr-meeting-title').textContent = currentMeeting.title;
+            document.getElementById('qr-type-label').textContent = type === 'sign' ? '掃描進行簽到' : '掃描進行報名';
+            document.getElementById('qr-modal').classList.remove('hidden-view');
+        }
+
+        function resetGrp() {
             document.getElementById('new-group-name').value = ''; document.getElementById('new-group-members').value = '';
-            document.getElementById('group-form-title').innerHTML = '<i data-lucide="users" class="mr-2 text-blue-600"></i> 設定常用群組';
-            document.getElementById('save-group-btn').textContent = '儲存常用群組'; document.getElementById('cancel-group-edit-btn').classList.add('hidden');
+            document.getElementById('group-form-title').innerHTML = '<i data-lucide="users" class="mr-2 text-blue-600"></i> 設定常用名單';
+            document.getElementById('save-group-btn').textContent = '儲存設定'; document.getElementById('cancel-group-edit-btn').classList.add('hidden');
             lucide.createIcons();
         }
 
-        // 優化後的 PDF 匯出函數：支援文字繪製、自動分頁、節省體積
         async function exportPDF() {
-            const btn = document.getElementById('pdf-btn'); btn.disabled = true; btn.textContent = "生成中...";
-            
-            const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const pageWidth = 210, pageHeight = 297, margin = 15;
-            
-            // 建立一份包含所有名單的人員（出席 + 列席）
-            const allPeople = [
-                ...getSortedAttendees().map(p => ({ title: p.title, name: p.name, signature: p.signature, note: p.status === 'duty'?'值班':p.status==='vacation'?'休假':p.status==='leave'?'請假':'' })),
-                ...observers.map(o => ({ title: '列席', name: o.name, signature: o.signature, note: o.department }))
-            ];
-
-            const rowsPerPage = 12; // A4 一頁大約可放 12 行
-            const totalPages = Math.ceil(allPeople.length / rowsPerPage) || 1;
-
-            for (let i = 0; i < totalPages; i++) {
+            const b = document.getElementById('pdf-btn'); b.disabled = true; b.innerHTML = '生成中...';
+            const { jsPDF } = window.jspdf; const pdf = new jsPDF('p', 'mm', 'a4');
+            const all = [...attendees.sort((a,b)=>(a.order||0)-(b.order||0)).map(p => ({ title: p.title, name: p.name, signature: p.signature, note: p.status === 'duty'?'值班':p.status==='vacation'?'休假':p.status==='leave'?'請假':'' })), ...observers.map(o => ({ title: '列席', name: o.name, signature: o.signature, note: o.department }))];
+            const per = 11, pages = Math.ceil(all.length / per) || 1;
+            for (let i = 0; i < pages; i++) {
                 if (i > 0) pdf.addPage();
-                
-                // 每頁都要渲染表頭
-                const headerArea = document.getElementById('pdf-page-template');
-                document.getElementById('pdf-header-title').textContent = currentMeeting.title + " 簽到單";
+                const h = document.getElementById('pdf-page-template');
+                document.getElementById('pdf-header-title').textContent = currentMeeting.title;
                 document.getElementById('pdf-header-time').textContent = "時間：" + currentMeeting.date + " " + currentMeeting.time;
                 document.getElementById('pdf-header-location').textContent = "地點：" + currentMeeting.location;
                 document.getElementById('pdf-header-chairman').textContent = "主席：" + (currentMeeting.chairman || '');
-                document.querySelectorAll('.pdf-print-date').forEach(el => el.textContent = new Date().toLocaleDateString());
-
-                // 填入該頁的人員
-                const tbody = headerArea.querySelector('.pdf-table-body');
-                tbody.innerHTML = '';
-                const start = i * rowsPerPage;
-                const end = Math.min(start + rowsPerPage, allPeople.length);
-                
-                for (let j = start; j < end; j++) {
-                    const p = allPeople[j];
-                    const tr = document.createElement('tr'); tr.className = "h-16";
-                    tr.innerHTML = `
-                        <td class="border-2 border-black p-2 font-bold">${p.title}</td>
-                        <td class="border-2 border-black p-2 font-bold">${p.name}</td>
-                        <td class="border-2 border-black p-2 bg-white" style="width:120px;">
-                            ${p.signature ? `<img src="${p.signature}" style="max-height:50px; margin:auto;">` : ''}
-                        </td>
-                        <td class="border-2 border-black p-2 text-sm">${p.note}</td>
-                    `;
-                    tbody.appendChild(tr);
+                const body = h.querySelector('.pdf-table-body'); body.innerHTML = '';
+                const end = Math.min((i+1)*per, all.length);
+                for (let j = i*per; j < end; j++) {
+                    const p = all[j]; const tr = document.createElement('tr'); tr.className = "h-[50px]";
+                    tr.innerHTML = `<td class="p-3 text-sm border border-black">${p.title}</td><td class="p-3 text-xl font-bold border border-black">${p.name}</td><td class="p-2 border border-black">${p.signature ? `<img src="${p.signature}" style="max-height:48px; width:120px; margin:auto;">` : ''}</td><td class="p-3 text-sm text-slate-500 border border-black">${p.note}</td>`;
+                    body.appendChild(tr);
                 }
-
-                // 最後一頁才顯示統計
-                const statsArea = headerArea.querySelector('.pdf-footer-stats');
-                if (i === totalPages - 1) {
-                    const count = attendees.filter(a => a.status === 'present').length;
-                    const rate = attendees.length > 0 ? Math.round((count / attendees.length) * 100) : 0;
-                    statsArea.classList.remove('hidden-view');
-                    statsArea.innerHTML = `出席率：${rate}% (${count}/${attendees.length})<p class="text-xs font-normal text-gray-400">(實際出席人數/應出席人數*100%)</p>`;
-                } else {
-                    statsArea.classList.add('hidden-view');
-                }
-
-                // 截圖該頁
-                const canvas = await html2canvas(headerArea, { scale: 2, useCORS: true });
-                const imgData = canvas.toDataURL('image/jpeg', 0.8); // 轉為 JPEG 且壓縮 80% 體積更小
-                pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, (canvas.height * pageWidth) / canvas.width);
+                const f = h.querySelector('.pdf-footer-stats');
+                if (i === pages - 1) {
+                    const ok = attendees.filter(a => a.status === 'present').length;
+                    f.classList.remove('hidden'); f.innerHTML = `出席率：${Math.round((ok/attendees.length)*100)}% (${ok}/${attendees.length})`;
+                } else f.classList.add('hidden');
+                const canvas = await html2canvas(h, { scale: 2.5, useCORS: true });
+                pdf.addImage(canvas.toDataURL('image/jpeg', 0.85), 'JPEG', 0, 0, 210, (canvas.height*210)/canvas.width);
             }
-            
-            pdf.save(`${currentMeeting.title}_完整簽到單.pdf`);
-            btn.disabled = false; btn.textContent = "匯出 PDF 簽到單";
+            pdf.save(`簽到單_${currentMeeting.title}.pdf`); b.disabled = false; b.innerHTML = '<i data-lucide="file-text"></i> 匯出報表 (PDF)'; lucide.createIcons();
         }
 
         function exportExcel() {
-            const rows = [["衛生福利部豐原醫院藥劑科 簽到表"], ["主題", currentMeeting.title], ["時間", currentMeeting.date + " " + currentMeeting.time], ["地點", currentMeeting.location], ["出席名單"]];
-            getSortedAttendees().forEach(p => {
-                let s = p.status === 'present' ? "出席" : (p.status === 'duty' ? "值班" : (p.status === 'vacation' ? "休假" : (p.status === 'leave' ? "請假" : "未簽到")));
-                rows.push([p.title, p.name, s, p.signedAt ? `簽到: ${new Date(p.signedAt).toLocaleTimeString()}` : '']);
-            });
-            observers.forEach(o => rows.push(["列席", o.name, "出席", `單位: ${o.department}`]));
+            const rows = [["豐原醫院 簽到表"], ["活動", currentMeeting.title], ["時間", currentMeeting.date], ["名單"]];
+            attendees.sort((a,b)=>(a.order||0)-(b.order||0)).forEach(p => rows.push([p.title, p.name, p.status==='present'?"出席":p.status, p.signedAt||'']));
             const ws = XLSX.utils.aoa_to_sheet(rows); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
             XLSX.writeFile(wb, `${currentMeeting.title}.xlsx`);
         }
 
-        function renderImportButtons() {
-            const c = document.getElementById('group-import-container'); c.innerHTML = groups.length===0 ? '<p class="text-xs text-slate-400">尚無常用群組</p>' : '';
+        function renderImports() {
+            const c = document.getElementById('group-import-container'); c.innerHTML = groups.length===0 ? '<p class="text-xs text-slate-400">無群組</p>' : '';
             groups.forEach(g => {
-                const btn = document.createElement('button'); btn.className = "bg-white border-2 border-blue-100 text-blue-600 px-4 py-2 rounded-2xl text-sm font-black shadow-sm hover:bg-blue-50 transition-all";
-                btn.textContent = `+ ${g.name}`;
-                btn.onclick = async () => {
-                    let maxOrder = attendees.length > 0 ? Math.max(...attendees.map(a => a.order || 0)) : 0;
-                    for (const raw of g.members) {
-                        maxOrder++;
-                        let title = '藥師', name = raw; if (raw.includes('-')) [title, name] = raw.split('-');
-                        await addDoc(collection(db, `fyh_attendees_${currentMeeting.id}`), { title, name, signed: false, status: 'none', createdAt: serverTimestamp(), order: maxOrder });
-                    }
-                };
-                c.appendChild(btn);
+                const b = document.createElement('button'); b.className = "bg-white border-2 border-blue-100 text-blue-700 px-4 py-2 rounded-2xl text-xs font-black shadow-sm hover:bg-blue-50";
+                b.textContent = `+ ${g.name}`; b.onclick = async () => {
+                    let max = attendees.length > 0 ? Math.max(...attendees.map(a => a.order || 0)) : 0;
+                    for (const raw of g.members) { max++; let title = '藥師', name = raw; if (raw.includes('-')) [title, name] = raw.split('-'); await addDoc(collection(db, `fyh_attendees_${currentMeeting.id}`), { title, name, signed: false, status: 'none', createdAt: serverTimestamp(), order: max }); }
+                }; c.appendChild(b);
             });
         }
 
-        function renderAdminPersonnelList() {
-            const c = document.getElementById('admin-attendees-list');
-            document.getElementById('admin-list-count').textContent = `名單人員共 (${attendees.length} 人)`;
-            c.innerHTML = '';
-            const sorted = getSortedAttendees();
-            sorted.forEach((p, idx) => {
-                const div = document.createElement('div'); div.className = "p-3 border-b last:border-0 flex justify-between items-center bg-white group";
-                const upBtn = idx > 0 ? `<button onclick="window.moveAttendee('${p.id}', -1)" class="p-1 text-blue-500 hover:bg-blue-50 rounded"><i data-lucide="chevron-up" size="16"></i></button>` : `<div class="w-6"></div>`;
-                const downBtn = idx < sorted.length - 1 ? `<button onclick="window.moveAttendee('${p.id}', 1)" class="p-1 text-blue-500 hover:bg-blue-50 rounded"><i data-lucide="chevron-down" size="16"></i></button>` : `<div class="w-6"></div>`;
-                div.innerHTML = `<div class="flex items-center gap-3"><div class="flex flex-col">${upBtn}${downBtn}</div><div class="flex items-center gap-2"><span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-bold">${p.title}</span><span class="font-bold text-slate-700">${p.name}</span></div></div><button class="text-red-300 hover:text-red-500 p-2" onclick="window.delAtt('${p.id}')"><i data-lucide="trash-2" size="18"></i></button>`;
+        function renderAdminList() {
+            const c = document.getElementById('admin-attendees-list'); c.innerHTML = '';
+            attendees.sort((a,b)=>(a.order||0)-(b.order||0)).forEach((p, idx) => {
+                const div = document.createElement('div'); div.className = "p-4 border-b flex justify-between items-center bg-white";
+                div.innerHTML = `<div class="flex items-center gap-4"><div class="flex flex-col"><button onclick="window.moveAtt('${p.id}',-1)" class="text-blue-500"><i data-lucide="chevron-up" size="18"></i></button><button onclick="window.moveAtt('${p.id}',1)" class="text-blue-500"><i data-lucide="chevron-down" size="18"></i></button></div><span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-black">${p.title}</span><span class="font-black text-slate-700">${p.name}</span></div><button class="text-red-300" onclick="window.delAtt('${p.id}')"><i data-lucide="trash-2" size="20"></i></button>`;
                 c.appendChild(div);
-            });
-            lucide.createIcons();
+            }); lucide.createIcons();
         }
-        window.delAtt = async (id) => { if(confirm("移除此人員？")) await deleteDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id)); };
+        window.moveAtt = async (id, dir) => {
+            const s = attendees.sort((a,b)=>(a.order||0)-(b.order||0)); const i = s.findIndex(x => x.id === id); if (i===-1||(i+dir<0)||(i+dir>=s.length)) return;
+            const a = s[i], b = s[i+dir]; await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, a.id), { order: b.order || 0 }); await updateDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, b.id), { order: a.order || 0 });
+        };
+        window.delAtt = async (id) => { if(confirm("移除？")) await deleteDoc(doc(db, `fyh_attendees_${currentMeeting.id}`, id)); };
 
-        function renderGroupsList() {
+        function renderGroups() {
             const c = document.getElementById('groups-container'); c.innerHTML = '';
             groups.forEach(g => {
-                const div = document.createElement('div'); div.className = "bg-white p-5 rounded-2xl border flex justify-between items-center shadow-sm";
-                div.innerHTML = `<div class="flex-1"><h4 class="font-bold text-slate-800">${g.name}</h4><p class="text-xs text-slate-400 mt-1 truncate max-w-xs">${g.members.join(', ')}</p></div><div class="flex gap-1"><button class="p-2 text-blue-400" onclick="window.editGrp('${g.id}')"><i data-lucide="edit-3" size="20"></i></button><button class="p-2 text-red-200" onclick="window.delGrp('${g.id}')"><i data-lucide="trash-2" size="20"></i></button></div>`;
+                const div = document.createElement('div'); div.className = "bg-white p-6 rounded-3xl border flex justify-between items-center shadow-sm";
+                div.innerHTML = `<div class="flex-1"><h4 class="font-black text-slate-800">${g.name}</h4><p class="text-xs text-slate-400 mt-1 truncate">${g.members.join(', ')}</p></div><div class="flex gap-2"><button class="p-3 text-blue-500 bg-blue-50 rounded-2xl" onclick="window.editGrp('${g.id}')"><i data-lucide="edit-3" size="20"></i></button><button class="p-3 text-red-400 bg-red-50 rounded-2xl" onclick="window.delGrp('${g.id}')"><i data-lucide="trash-2" size="20"></i></button></div>`;
                 c.appendChild(div);
-            });
-            lucide.createIcons();
+            }); lucide.createIcons();
         }
 
         window.editGrp = (id) => {
-            const g = groups.find(x => x.id === id); if (!g) return;
-            editingGroupId = id;
-            document.getElementById('new-group-name').value = g.name;
-            document.getElementById('new-group-members').value = g.members.join(', ');
-            document.getElementById('group-form-title').innerHTML = '<i data-lucide="edit-3" class="mr-2 text-blue-600"></i> 編輯常用群組模式';
-            document.getElementById('save-group-btn').textContent = '更新資料';
-            document.getElementById('cancel-group-edit-btn').classList.remove('hidden');
+            const g = groups.find(x => x.id === id); if (!g) return; editingGroupId = id;
+            document.getElementById('new-group-name').value = g.name; document.getElementById('new-group-members').value = g.members.join(', ');
+            document.getElementById('group-form-title').innerHTML = '<i data-lucide="edit-3" class="mr-2 text-blue-600"></i> 編輯模式';
+            document.getElementById('save-group-btn').textContent = '更新資料'; document.getElementById('cancel-group-edit-btn').classList.remove('hidden');
             window.scrollTo({ top: 0, behavior: 'smooth' }); lucide.createIcons();
         };
-        window.delGrp = async (id) => { if(confirm("確定刪除群組？")) await deleteDoc(doc(db, 'fyh_groups', id)); };
+
+        window.delGrp = async (id) => { if(checkPass() && confirm("確定刪除群組？")) await deleteDoc(doc(db, 'fyh_groups', id)); };
     </script>
 </body>
 </html>

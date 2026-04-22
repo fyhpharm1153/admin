@@ -233,7 +233,7 @@
                         <label class="text-xs font-black text-slate-400 ml-4 uppercase tracking-widest">真實姓名</label>
                         <input id="reg-name" required placeholder="請輸入姓名" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold focus:ring-2 focus:ring-orange-500 shadow-inner" />
                     </div>
-                    <button type="submit" class="w-full bg-orange-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg btn-hover mt-4">立即報名活動</button>
+                    <button type="submit" class="w-full bg-orange-600 text-white py-5 rounded-[2rem] font-black text-xl shadow-lg btn-hover mt-4 shadow-orange-100">立即報名活動</button>
                     <button type="button" onclick="showUI('list')" class="w-full text-slate-400 font-bold py-2 mt-2">取消並返回</button>
                 </form>
                 <div id="reg-success" class="hidden py-10 animate-in fade-in">
@@ -374,17 +374,17 @@
 
     <!-- PDF Template -->
     <div id="pdf-export-container">
-        <div id="pdf-page-template" class="w-[850px] bg-white p-12 font-serif text-black">
-            <div class="text-center mb-10">
+        <div id="pdf-page-template" class="w-[850px] bg-white p-12 font-serif text-black relative">
+            <div class="text-center mb-10" id="pdf-header-section">
                 <h1 class="text-4xl font-bold border-black pb-1 inline-block">衛生福利部豐原醫院</h1>
                 <h2 id="pdf-header-title-inner" class="text-3xl font-bold mt-4 text-black"></h2>
-                <h3 class="text-2xl font-bold mt-2 text-black tracking-widest">簽到單</h3>
+                <h3 class="text-2xl font-bold mt-2 text-black tracking-widest underline underline-offset-8">簽到單</h3>
                 
                 <div class="text-left text-xl font-bold mt-10 space-y-4 px-4 text-black">
                     <p id="pdf-header-time-inner"></p>
                     <p id="pdf-header-location-inner"></p>
                     <p id="pdf-header-chairman-inner"></p>
-                    <p>四、 出列席人員：</p>
+                    <p class="mt-4">四、 出列席人員：</p>
                 </div>
             </div>
             
@@ -400,8 +400,10 @@
             
             <div class="pdf-footer-stats-inner mt-8 p-6 border-2 border-black rounded-xl text-black font-bold text-xl"></div>
             
-            <div class="mt-8 text-right text-sm font-bold opacity-40 italic text-black">
-                系統驗證：FENGYUAN-HOSP-E-SIGN
+            <!-- 頁碼區 -->
+            <div class="mt-12 flex justify-between items-center text-sm font-bold italic text-black border-t border-black pt-4">
+                <span>系統驗證：FENGYUAN-HOSP-E-SIGN</span>
+                <span id="pdf-pagination-text"></span>
             </div>
         </div>
     </div>
@@ -660,38 +662,85 @@
             document.getElementById('qr-modal').classList.remove('hidden-view');
         }
 
-        function resetGrp() { document.getElementById('new-group-name').value = ''; document.getElementById('new-group-members').value = ''; document.getElementById('group-form-title').innerHTML = '<i data-lucide="users" class="mr-2 text-blue-600"></i> 編輯模式'; document.getElementById('save-group-btn').textContent = '更新設定'; document.getElementById('cancel-group-edit-btn').classList.remove('hidden'); lucide.createIcons(); }
+        function resetGrp() { document.getElementById('new-group-name').value = ''; document.getElementById('new-group-members').value = ''; document.getElementById('group-form-title').innerHTML = '<i data-lucide="users" class="mr-2 text-blue-600"></i> 設定常用名單'; document.getElementById('save-group-btn').textContent = '儲存設定'; document.getElementById('cancel-group-edit-btn').classList.remove('hidden'); lucide.createIcons(); }
 
+        // 優化後的 PDF 匯出函式 (移除重複標題 + 新增頁碼)
         async function exportPDF() {
             const b = document.getElementById('pdf-btn'); b.disabled = true; b.innerHTML = '<i class="animate-spin" data-lucide="loader-2"></i> 生成中...'; lucide.createIcons();
             const { jsPDF } = window.jspdf; const pdf = new jsPDF('p', 'mm', 'a4');
-            const all = [...attendees.sort((a,b)=>(a.order||0)-(b.order||0)).map(p => ({ title: p.title, name: p.name, signature: p.signature, note: p.status === 'duty'?'值班':p.status==='vacation'?'休假':p.status==='leave'?'請假':'' })), ...observers.map(o => ({ title: '列席', name: o.name, signature: o.signature, note: o.department }))];
-            const per = 11, pages = Math.ceil(all.length / per) || 1;
+            
+            // 整理所有人名單
+            const all = [
+                ...attendees.sort((a,b)=>(a.order||0)-(b.order||0)).map(p => ({ title: p.title, name: p.name, signature: p.signature, note: p.status === 'duty'?'值班':p.status==='vacation'?'休假':p.status==='leave'?'請假':'' })),
+                ...observers.map(o => ({ title: '列席', name: o.name, signature: o.signature, note: o.department }))
+            ];
+
+            // 分頁邏輯設定
+            const rowsFirstPage = 9;   // 第一頁有標題，行數較少
+            const rowsOtherPages = 15; // 後續頁面沒標題，行數較多
+            
+            // 計算總頁數
+            let totalPages = 1;
+            if (all.length > rowsFirstPage) {
+                totalPages = 1 + Math.ceil((all.length - rowsFirstPage) / rowsOtherPages);
+            }
             
             const container = document.getElementById('pdf-export-container');
             container.style.left = "0px"; container.style.zIndex = "1000"; container.style.opacity = "0.01";
 
-            for (let i = 0; i < pages; i++) {
+            for (let i = 0; i < totalPages; i++) {
                 if (i > 0) pdf.addPage();
-                document.getElementById('pdf-header-title-inner').textContent = currentMeeting.title;
-                document.getElementById('pdf-header-time-inner').textContent = "一、 時間：" + currentMeeting.date + " " + (currentMeeting.time||"");
-                document.getElementById('pdf-header-location-inner').textContent = "二、 地點：" + currentMeeting.location;
-                document.getElementById('pdf-header-chairman-inner').textContent = "三、 主席/主持人：" + (currentMeeting.chairman || '');
+                
+                // --- 設定顯示/隱藏內容 ---
+                const headerSection = document.getElementById('pdf-header-section');
+                if (i === 0) {
+                    headerSection.classList.remove('hidden-view'); // 第一頁顯示標頭
+                    document.getElementById('pdf-header-title-inner').textContent = currentMeeting.title;
+                    document.getElementById('pdf-header-time-inner').textContent = "一、 時間：" + currentMeeting.date + " " + (currentMeeting.time||"");
+                    document.getElementById('pdf-header-location-inner').textContent = "二、 地點：" + currentMeeting.location;
+                    document.getElementById('pdf-header-chairman-inner').textContent = "三、 主席/主持人：" + (currentMeeting.chairman || '');
+                } else {
+                    headerSection.classList.add('hidden-view'); // 後續頁面隱藏標頭
+                }
+
+                // --- 填入當前分頁名單 ---
                 const body = container.querySelector('.pdf-table-body-inner'); body.innerHTML = '';
-                const end = Math.min((i+1)*per, all.length);
-                for (let j = i*per; j < end; j++) {
+                let start, end;
+                if (i === 0) {
+                    start = 0;
+                    end = Math.min(rowsFirstPage, all.length);
+                } else {
+                    start = rowsFirstPage + (i - 1) * rowsOtherPages;
+                    end = Math.min(start + rowsOtherPages, all.length);
+                }
+
+                for (let j = start; j < end; j++) {
                     const p = all[j]; const tr = document.createElement('tr'); tr.className = "h-[50px] text-black border border-black";
                     tr.innerHTML = `<td class="p-3 text-sm border-2 border-black text-black">${p.title}</td><td class="p-3 text-xl font-bold border-2 border-black text-black">${p.name}</td><td class="p-2 border-2 border-black text-black">${p.signature ? `<img src="${p.signature}" style="max-height:45px; width:110px; margin:auto;">` : ''}</td><td class="p-3 text-sm border-2 border-black text-black">${p.note}</td>`;
                     body.appendChild(tr);
                 }
+
+                // --- 設定頁底統計與頁碼 ---
                 const f = container.querySelector('.pdf-footer-stats-inner');
-                if (i === pages - 1) { const ok = attendees.filter(a => a.status === 'present').length; f.classList.remove('hidden'); f.innerHTML = `出席率：${Math.round((ok/attendees.length)*100)}% (實到 ${ok} / 應到 ${attendees.length})`; } else f.classList.add('hidden');
+                if (i === totalPages - 1) { 
+                    const ok = attendees.filter(a => a.status === 'present').length; 
+                    f.classList.remove('hidden'); 
+                    f.innerHTML = `出席率：${Math.round((ok/attendees.length)*100)}% (實到 ${ok} / 應到 ${attendees.length})`; 
+                } else {
+                    f.classList.add('hidden');
+                }
                 
+                // 顯示頁碼
+                document.getElementById('pdf-pagination-text').textContent = `共 ${totalPages} 頁，第 ${i + 1} 頁`;
+
+                // --- 截圖並加入 PDF ---
                 const canvas = await html2canvas(document.getElementById('pdf-page-template'), { scale: 2.5, useCORS: true, logging: false });
                 pdf.addImage(canvas.toDataURL('image/jpeg', 0.8), 'JPEG', 0, 0, 210, (canvas.height*210)/canvas.width);
             }
+            
             container.style.left = "-9999px";
-            pdf.save(`簽到單_${currentMeeting.title}.pdf`); b.disabled = false; b.innerHTML = '<i data-lucide="file-text"></i> 匯出 PDF'; lucide.createIcons();
+            pdf.save(`[${currentMeeting.date}]_${currentMeeting.title}_簽到單.pdf`); 
+            b.disabled = false; b.innerHTML = '<i data-lucide="file-text"></i> 匯出 PDF'; lucide.createIcons();
         }
 
         function exportExcel() {

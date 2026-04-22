@@ -269,7 +269,7 @@
                <h2 id="group-form-title" class="text-2xl font-black mb-6 flex items-center text-slate-800"><i data-lucide="users" class="mr-3 text-blue-600"></i> 設定常用名單</h2>
                <div class="space-y-4">
                    <input id="new-group-name" placeholder="群組名稱" class="w-full p-4 rounded-2xl border bg-slate-50 outline-none font-bold focus:ring-2 focus:ring-blue-500" />
-                   <textarea id="new-group-members" placeholder="職稱-姓名 (用逗點分隔)" class="w-full p-4 h-32 rounded-2xl border bg-slate-50 outline-none text-sm"></textarea>
+                   <textarea id="new-group-members" placeholder="職稱-姓名" class="w-full p-4 h-32 rounded-2xl border bg-slate-50 outline-none text-sm"></textarea>
                    <div class="flex gap-2">
                        <button id="save-group-btn" class="flex-[2] bg-blue-700 text-white py-4 rounded-2xl font-black shadow-lg btn-hover">儲存常用資料</button>
                        <button id="cancel-group-edit-btn" class="flex-1 bg-slate-100 text-slate-500 py-4 rounded-2xl font-black hidden">取消</button>
@@ -376,30 +376,32 @@
     <div id="pdf-export-container">
         <div id="pdf-page-template" class="w-[850px] bg-white p-12 font-serif text-black">
             <div class="text-center mb-10">
-                <h1 class="text-4xl font-bold border-b-4 border-black pb-3 inline-block">豐原醫院會議活動簽到單</h1>
-                <h2 id="pdf-header-title-inner" class="text-2xl font-bold mt-6 py-2 px-6 bg-slate-100 rounded-lg inline-block text-black"></h2>
-                <div class="grid grid-cols-2 gap-4 mt-8 text-left text-lg font-bold text-black">
-                    <div class="space-y-1 border-l-4 border-black pl-4 text-black">
-                        <p id="pdf-header-time-inner"></p>
-                        <p id="pdf-header-location-inner"></p>
-                    </div>
-                    <div class="flex items-end justify-end text-black">
-                        <p id="pdf-header-chairman-inner" class="border-b-2 border-black pb-1"></p>
-                    </div>
+                <h1 class="text-4xl font-bold border-black pb-1 inline-block">衛生福利部豐原醫院</h1>
+                <h2 id="pdf-header-title-inner" class="text-3xl font-bold mt-4 text-black"></h2>
+                <h3 class="text-2xl font-bold mt-2 text-black tracking-widest">簽到單</h3>
+                
+                <div class="text-left text-xl font-bold mt-10 space-y-4 px-4 text-black">
+                    <p id="pdf-header-time-inner"></p>
+                    <p id="pdf-header-location-inner"></p>
+                    <p id="pdf-header-chairman-inner"></p>
+                    <p>四、 出列席人員：</p>
                 </div>
             </div>
-            <table class="pdf-table w-full border-collapse text-center text-lg font-bold text-black">
+            
+            <table class="pdf-table w-full border-collapse text-center text-lg font-bold text-black border-2 border-black">
                 <thead><tr class="h-14">
-                    <th class="w-[15%] border-2 border-black bg-slate-50">職稱</th>
-                    <th class="w-[25%] border-2 border-black bg-slate-50">姓名</th>
-                    <th class="w-[40%] border-2 border-black bg-slate-50">手寫簽名</th>
-                    <th class="w-[20%] border-2 border-black bg-slate-50">備註</th>
+                    <th class="w-[15%] border-2 border-black bg-slate-50 text-black">職稱</th>
+                    <th class="w-[25%] border-2 border-black bg-slate-50 text-black">姓名</th>
+                    <th class="w-[40%] border-2 border-black bg-slate-50 text-black">手寫簽名</th>
+                    <th class="w-[20%] border-2 border-black bg-slate-50 text-black">備註</th>
                 </tr></thead>
                 <tbody class="pdf-table-body-inner text-black"></tbody>
             </table>
-            <div class="pdf-footer-stats-inner mt-10 p-6 border-2 border-black rounded-2xl hidden text-black"></div>
+            
+            <div class="pdf-footer-stats-inner mt-8 p-6 border-2 border-black rounded-xl text-black font-bold text-xl"></div>
+            
             <div class="mt-8 text-right text-sm font-bold opacity-40 italic text-black">
-                簽核：____________________ 
+                系統驗證：FENGYUAN-HOSP-E-SIGN
             </div>
         </div>
     </div>
@@ -408,9 +410,9 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getFirestore, collection, doc, onSnapshot, updateDoc, addDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, doc, onSnapshot, updateDoc, addDoc, deleteDoc, serverTimestamp, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // Firebase Config
+        // 配置
         const firebaseConfig = {
             apiKey: "AIzaSyDiimflWIVYlQ7YX27cX7KzFhF_nAG2OcY",
             authDomain: "fyh-pharmacy-v2.firebaseapp.com",
@@ -542,7 +544,7 @@
                 const div = document.createElement('div'); div.className = `bg-white p-5 rounded-3xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm ${ok ? 'border-emerald-500 bg-emerald-50/10' : 'border-slate-100'}`;
                 let act = ok ? 
                     `<div class="flex items-center gap-2"><img src="${p.signature}" class="h-12 w-32 object-contain bg-white rounded-lg p-1 border shadow-inner"><div class="flex flex-col gap-1"><button class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-[10px] font-black" onclick="window.openSignPopup('attendee', '${p.id}')">重簽</button><button class="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-[10px] font-black" onclick="window.cancelSign('${p.id}')">取消</button></div></div>` : 
-                    `<div class="flex gap-2 items-center"><button class="bg-blue-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-lg active:scale-95" onclick="window.openSignPopup('attendee', '${p.id}')">簽名</button><select class="text-xs border-2 rounded-2xl px-2 py-3 bg-slate-50 font-black" onchange="window.setS('${p.id}', this.value)"><option value="none">--備註--</option><option value="duty" ${p.status==='duty'?'selected':''}>值班</option><option value="vacation" ${p.status==='vacation'?'selected':''}>休假</option><option value="leave" ${p.status==='leave'?'selected':''}>請假</option></select><button onclick="window.delReg('${p.id}')" class="text-red-300 p-2"><i data-lucide="trash-2" size="20"></i></button></div>`;
+                    `<div class="flex gap-2 items-center"><button class="bg-blue-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-lg active:scale-95 transition-all" onclick="window.openSignPopup('attendee', '${p.id}')">簽名</button><select class="text-xs border-2 rounded-2xl px-2 py-3 bg-slate-50 font-black" onchange="window.setS('${p.id}', this.value)"><option value="none">--備註--</option><option value="duty" ${p.status==='duty'?'selected':''}>值班</option><option value="vacation" ${p.status==='vacation'?'selected':''}>休假</option><option value="leave" ${p.status==='leave'?'selected':''}>請假</option></select><button onclick="window.delReg('${p.id}')" class="text-red-300 p-2"><i data-lucide="trash-2" size="20"></i></button></div>`;
                 div.innerHTML = `<div class="flex items-center space-x-4"><div class="w-12 h-12 rounded-2xl flex items-center justify-center ${ok?'bg-emerald-500 text-white shadow-lg':'bg-slate-100 text-slate-400'}"><i data-lucide="${ok?'check-circle-2':'user'}" size="24"></i></div><div><div class="flex items-center gap-2"><span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-black text-slate-500">${p.title}</span><p class="font-black text-slate-800 text-xl">${p.name}</p></div>${p.status!=='none'&&p.status!=='present'?`<span class="text-[11px] font-black text-white bg-red-500 px-2 py-0.5 rounded-full mt-1 inline-block">狀態：${p.status==='duty'?'值班':p.status==='vacation'?'休假':'請假'}</span>`:''}</div></div>${act}`;
                 c.appendChild(div);
             }); lucide.createIcons();
@@ -640,7 +642,7 @@
         }
 
         function openEditModal() {
-            isEditingMeeting = true; document.getElementById('modal-title').textContent = "編輯資訊";
+            isEditingMeeting = true; document.getElementById('modal-title').textContent = "編輯活動資訊";
             document.getElementById('m-title').value = currentMeeting.title; document.getElementById('m-date').value = currentMeeting.date;
             document.getElementById('m-time').value = currentMeeting.time; document.getElementById('m-chairman').value = currentMeeting.chairman;
             document.getElementById('m-location').value = currentMeeting.location; document.getElementById('m-sign-start').value = currentMeeting.signStart;
@@ -654,11 +656,11 @@
             const url = `https://fyhpharm1153.github.io/admin/meetingsign.html?${type === 'sign' ? 'm' : 'reg'}=${currentMeeting.id}`;
             new QRCode(c, { text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
             document.getElementById('qr-meeting-title').textContent = currentMeeting.title;
-            document.getElementById('qr-type-label').textContent = type === 'sign' ? '掃描簽到' : '掃描報名';
+            document.getElementById('qr-type-label').textContent = type === 'sign' ? '掃描進行簽到' : '掃描進行報名';
             document.getElementById('qr-modal').classList.remove('hidden-view');
         }
 
-        function resetGrp() { document.getElementById('new-group-name').value = ''; document.getElementById('new-group-members').value = ''; document.getElementById('group-form-title').innerHTML = '<i data-lucide="users" class="mr-2 text-blue-600"></i> 設定常用名單'; document.getElementById('save-group-btn').textContent = '儲存設定'; document.getElementById('cancel-group-edit-btn').classList.add('hidden'); lucide.createIcons(); }
+        function resetGrp() { document.getElementById('new-group-name').value = ''; document.getElementById('new-group-members').value = ''; document.getElementById('group-form-title').innerHTML = '<i data-lucide="users" class="mr-2 text-blue-600"></i> 編輯模式'; document.getElementById('save-group-btn').textContent = '更新設定'; document.getElementById('cancel-group-edit-btn').classList.remove('hidden'); lucide.createIcons(); }
 
         async function exportPDF() {
             const b = document.getElementById('pdf-btn'); b.disabled = true; b.innerHTML = '<i class="animate-spin" data-lucide="loader-2"></i> 生成中...'; lucide.createIcons();
@@ -666,16 +668,15 @@
             const all = [...attendees.sort((a,b)=>(a.order||0)-(b.order||0)).map(p => ({ title: p.title, name: p.name, signature: p.signature, note: p.status === 'duty'?'值班':p.status==='vacation'?'休假':p.status==='leave'?'請假':'' })), ...observers.map(o => ({ title: '列席', name: o.name, signature: o.signature, note: o.department }))];
             const per = 11, pages = Math.ceil(all.length / per) || 1;
             
-            // 暫時將隱藏容器顯示在一個不影響 UI 的地方以進行渲染
             const container = document.getElementById('pdf-export-container');
             container.style.left = "0px"; container.style.zIndex = "1000"; container.style.opacity = "0.01";
 
             for (let i = 0; i < pages; i++) {
                 if (i > 0) pdf.addPage();
                 document.getElementById('pdf-header-title-inner').textContent = currentMeeting.title;
-                document.getElementById('pdf-header-time-inner').textContent = "時間：" + currentMeeting.date + " " + (currentMeeting.time||"");
-                document.getElementById('pdf-header-location-inner').textContent = "地點：" + currentMeeting.location;
-                document.getElementById('pdf-header-chairman-inner').textContent = "主持人：" + (currentMeeting.chairman || '');
+                document.getElementById('pdf-header-time-inner').textContent = "一、 時間：" + currentMeeting.date + " " + (currentMeeting.time||"");
+                document.getElementById('pdf-header-location-inner').textContent = "二、 地點：" + currentMeeting.location;
+                document.getElementById('pdf-header-chairman-inner').textContent = "三、 主席/主持人：" + (currentMeeting.chairman || '');
                 const body = container.querySelector('.pdf-table-body-inner'); body.innerHTML = '';
                 const end = Math.min((i+1)*per, all.length);
                 for (let j = i*per; j < end; j++) {
@@ -686,7 +687,7 @@
                 const f = container.querySelector('.pdf-footer-stats-inner');
                 if (i === pages - 1) { const ok = attendees.filter(a => a.status === 'present').length; f.classList.remove('hidden'); f.innerHTML = `出席率：${Math.round((ok/attendees.length)*100)}% (實到 ${ok} / 應到 ${attendees.length})`; } else f.classList.add('hidden');
                 
-                const canvas = await html2canvas(document.getElementById('pdf-page-template'), { scale: 2, useCORS: true, logging: false });
+                const canvas = await html2canvas(document.getElementById('pdf-page-template'), { scale: 2.5, useCORS: true, logging: false });
                 pdf.addImage(canvas.toDataURL('image/jpeg', 0.8), 'JPEG', 0, 0, 210, (canvas.height*210)/canvas.width);
             }
             container.style.left = "-9999px";
@@ -703,7 +704,7 @@
         function renderAdminList() {
             const c = document.getElementById('admin-attendees-list'); c.innerHTML = ''; const sorted = attendees.sort((a,b)=>(a.order||0)-(b.order||0));
             sorted.forEach((p, idx) => {
-                const div = document.createElement('div'); div.className = "p-4 border-b flex justify-between items-center bg-white";
+                const div = document.createElement('div'); div.className = "p-4 border-b last:border-0 flex justify-between items-center bg-white";
                 div.innerHTML = `<div class="flex items-center gap-4"><div class="flex flex-col"><button onclick="window.moveAtt('${p.id}',-1)" class="text-blue-500"><i data-lucide="chevron-up" size="18"></i></button><button onclick="window.moveAtt('${p.id}',1)" class="text-blue-600"><i data-lucide="chevron-down" size="18"></i></button></div><span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-black tracking-tighter">${p.title}</span><span class="font-black text-slate-700 text-lg">${p.name}</span></div><button class="text-red-300 hover:text-red-500 p-2" onclick="window.delReg('${p.id}')"><i data-lucide="trash-2" size="20"></i></button>`;
                 c.appendChild(div);
             }); lucide.createIcons();

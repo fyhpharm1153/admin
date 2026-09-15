@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>藥局溫濕度日誌監測系統</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -14,207 +15,205 @@
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     button, select, input { touch-action: manipulation; }
 
-    /* 字體縮放階層樣式 */
-    body.font-size-md { font-size: 16px; }
-    body.font-size-lg { font-size: 18.5px; }
-    body.font-size-xl { font-size: 21px; }
+    /* 字體縮放樣式 */
+    body.font-size-md { font-size: 15px; }
+    body.font-size-lg { font-size: 17.5px; }
+    body.font-size-xl { font-size: 20px; }
 
-    body.font-size-lg select, body.font-size-lg input, body.font-size-lg button { font-size: 1.12em; }
-    body.font-size-xl select, body.font-size-xl input, body.font-size-xl button { font-size: 1.25em; }
+    body.font-size-lg select, body.font-size-lg input, body.font-size-lg button { font-size: 1.1em; }
+    body.font-size-xl select, body.font-size-xl input, body.font-size-xl button { font-size: 1.22em; }
   </style>
 </head>
-<body id="app-body" class="bg-slate-100 text-slate-800 min-h-screen flex flex-col font-sans font-size-md pb-16 md:pb-6 transition-all duration-200">
+<body id="app-body" class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans font-size-md pb-20 md:pb-8 transition-all duration-150 selection:bg-blue-500 selection:text-white">
 
-  <div id="loading-bar" class="fixed top-0 left-0 right-0 h-1.5 bg-blue-600 animate-pulse z-50 transition-all"></div>
-
-  <!-- 頂部 Header -->
-  <header class="bg-blue-700 text-white shadow-md sticky top-0 z-40">
-    <div class="max-w-6xl mx-auto px-3.5 py-2.5 flex justify-between items-center gap-2">
-      <div class="flex items-center space-x-2">
-        <i data-lucide="thermometer-snowflake" class="w-6 h-6 text-blue-200"></i>
+  <!-- 頂部導航 -->
+  <header class="bg-white/95 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-40 shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
+    <div class="max-w-5xl mx-auto px-4 py-2.5 flex justify-between items-center gap-3">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white shadow-sm shadow-blue-500/20">
+          <i data-lucide="activity" class="w-5 h-5"></i>
+        </div>
         <div>
-          <h1 class="text-sm sm:text-base font-bold tracking-wide leading-tight">藥局溫濕度管理系統</h1>
-          <p class="text-[10px] text-blue-200">門診 ｜ 住院 ｜ 急診 ｜ 藥庫</p>
+          <h1 class="text-sm sm:text-base font-bold text-slate-900 tracking-tight leading-none">藥局溫濕度智慧日誌</h1>
+          <p class="text-[11px] font-medium text-slate-400 mt-0.5">門診 ｜ 住院 ｜ 急診 ｜ 藥庫</p>
         </div>
       </div>
       
-      <!-- 控制區：字體縮放與重新整理 -->
-      <div class="flex items-center gap-1.5">
-        <div class="flex bg-blue-800/80 rounded-lg p-0.5 border border-blue-500/40 text-[11px] font-bold">
-          <button type="button" onclick="setFontSize('md')" id="font-btn-md" class="px-2 py-0.5 rounded bg-white text-blue-800 shadow-sm">A-</button>
-          <button type="button" onclick="setFontSize('lg')" id="font-btn-lg" class="px-2 py-0.5 rounded text-blue-100 hover:text-white">A</button>
-          <button type="button" onclick="setFontSize('xl')" id="font-btn-xl" class="px-2 py-0.5 rounded text-blue-100 hover:text-white">A+</button>
+      <!-- 縮放與即時狀態 -->
+      <div class="flex items-center gap-2">
+        <div class="flex bg-slate-100/90 rounded-lg p-0.5 border border-slate-200 text-xs font-bold text-slate-600">
+          <button type="button" onclick="setFontSize('md')" id="font-btn-md" class="px-2 py-0.5 rounded bg-white text-blue-600 shadow-sm">A-</button>
+          <button type="button" onclick="setFontSize('lg')" id="font-btn-lg" class="px-2 py-0.5 rounded text-slate-500 hover:text-slate-800">A</button>
+          <button type="button" onclick="setFontSize('xl')" id="font-btn-xl" class="px-2 py-0.5 rounded text-slate-500 hover:text-slate-800">A+</button>
         </div>
-        <button onclick="fetchSheetData()" class="p-1.5 bg-blue-800/80 hover:bg-blue-900 rounded-lg border border-blue-500/40 text-blue-100">
-          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+        <button onclick="loadAllData()" class="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition">
+          <i data-lucide="rotate-cw" id="refresh-icon" class="w-4 h-4"></i>
         </button>
       </div>
     </div>
 
-    <!-- 導覽頁籤 -->
-    <nav class="flex border-t border-blue-600/60 bg-blue-800 px-2 py-1.5 gap-1 overflow-x-auto no-scrollbar">
-      <button id="tab-record-btn" onclick="switchTab('record')" class="tab-btn flex-1 min-w-[72px] py-1.5 px-2 rounded-md text-xs sm:text-sm font-semibold bg-white text-blue-800 shadow-sm flex items-center justify-center gap-1 whitespace-nowrap">
-        <i data-lucide="edit-3" class="w-3.5 h-3.5"></i> 快速記錄
+    <!-- 頁籤分頁列 -->
+    <nav class="flex border-t border-slate-100 px-3 py-1.5 gap-1.5 max-w-5xl mx-auto overflow-x-auto no-scrollbar">
+      <button id="tab-record-btn" onclick="switchTab('record')" class="tab-btn flex-1 min-w-[76px] py-1.5 px-3 rounded-lg text-xs font-bold bg-blue-600 text-white shadow-sm shadow-blue-600/20 flex items-center justify-center gap-1.5 whitespace-nowrap">
+        <i data-lucide="edit-3" class="w-3.5 h-3.5"></i> 登記
       </button>
-      <button id="tab-check-btn" onclick="switchTab('check')" class="tab-btn flex-1 min-w-[72px] py-1.5 px-2 rounded-md text-xs sm:text-sm font-semibold text-blue-100 hover:text-white flex items-center justify-center gap-1 whitespace-nowrap">
-        <i data-lucide="check-square" class="w-3.5 h-3.5"></i> 巡查檢核
+      <button id="tab-check-btn" onclick="switchTab('check')" class="tab-btn flex-1 min-w-[76px] py-1.5 px-3 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 flex items-center justify-center gap-1.5 whitespace-nowrap">
+        <i data-lucide="clipboard-check" class="w-3.5 h-3.5"></i> 檢核
       </button>
-      <button id="tab-chart-btn" onclick="switchTab('chart')" class="tab-btn flex-1 min-w-[72px] py-1.5 px-2 rounded-md text-xs sm:text-sm font-semibold text-blue-100 hover:text-white flex items-center justify-center gap-1 whitespace-nowrap">
-        <i data-lucide="line-chart" class="w-3.5 h-3.5"></i> 折線圖
+      <button id="tab-chart-btn" onclick="switchTab('chart')" class="tab-btn flex-1 min-w-[76px] py-1.5 px-3 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 flex items-center justify-center gap-1.5 whitespace-nowrap">
+        <i data-lucide="line-chart" class="w-3.5 h-3.5"></i> 趨勢
       </button>
-      <button id="tab-history-btn" onclick="switchTab('history')" class="tab-btn flex-1 min-w-[72px] py-1.5 px-2 rounded-md text-xs sm:text-sm font-semibold text-blue-100 hover:text-white flex items-center justify-center gap-1 whitespace-nowrap">
-        <i data-lucide="history" class="w-3.5 h-3.5"></i> 巡檢日誌
+      <button id="tab-history-btn" onclick="switchTab('history')" class="tab-btn flex-1 min-w-[76px] py-1.5 px-3 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 flex items-center justify-center gap-1.5 whitespace-nowrap">
+        <i data-lucide="history" class="w-3.5 h-3.5"></i> 日誌
       </button>
-      <button id="tab-admin-btn" onclick="switchTab('admin')" class="tab-btn flex-1 min-w-[72px] py-1.5 px-2 rounded-md text-xs sm:text-sm font-semibold text-blue-100 hover:text-white flex items-center justify-center gap-1 whitespace-nowrap">
-        <i data-lucide="settings" class="w-3.5 h-3.5"></i> 後臺管理
+      <button id="tab-admin-btn" onclick="switchTab('admin')" class="tab-btn flex-1 min-w-[76px] py-1.5 px-3 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 flex items-center justify-center gap-1.5 whitespace-nowrap">
+        <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i> 後臺
       </button>
     </nav>
   </header>
 
-  <main class="flex-1 max-w-5xl w-full mx-auto p-3 sm:p-5 space-y-4">
+  <main class="flex-1 max-w-5xl w-full mx-auto p-3.5 sm:p-5 space-y-4">
 
-    <!-- 頁籤 1: 快速記錄 -->
+    <!-- 頁籤 1: 登記 -->
     <section id="tab-record" class="space-y-4">
-      <div class="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-3.5 text-white shadow-sm flex items-center justify-between">
-        <div>
-          <div class="font-bold text-sm flex items-center gap-1.5">
-            <i data-lucide="scan" class="w-4 h-4 text-blue-200"></i>
-            相機直接掃碼巡檢
+      <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-blue-700 p-4 text-white shadow-sm shadow-blue-500/10 flex items-center justify-between gap-3">
+        <div class="relative z-10">
+          <div class="font-bold text-sm flex items-center gap-1.5 text-blue-100">
+            <i data-lucide="qr-code" class="w-4 h-4 text-white"></i> 智慧掃碼巡檢
           </div>
-          <p class="text-[11px] text-blue-100 mt-0.5">點擊鏡頭對準溫度計上的 QR Code，秒速定位</p>
+          <p class="text-xs text-blue-100/90 mt-0.5">點擊鏡頭對準冰箱或室溫標籤，自動帶出標準值</p>
         </div>
-        <button type="button" onclick="openCameraScanner()" class="px-3.5 py-2 bg-white text-blue-700 font-bold text-xs rounded-lg shadow-sm hover:bg-blue-50 active:scale-95 transition-transform flex items-center gap-1.5">
-          <i data-lucide="camera" class="w-4 h-4"></i> 開啟鏡頭
+        <button type="button" onclick="openCameraScanner()" class="relative z-10 px-4 py-2 bg-white text-blue-700 font-bold text-xs rounded-xl shadow-sm hover:bg-blue-50 active:scale-95 transition flex items-center gap-1.5 whitespace-nowrap">
+          <i data-lucide="camera" class="w-4 h-4"></i> 掃描 QR
         </button>
       </div>
 
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-6">
         <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-          <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
-            <i data-lucide="pen-tool" class="w-4 h-4 text-blue-600"></i>
-            <span id="form-action-title">巡檢溫濕度登記</span>
+          <h2 class="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+            <span id="form-action-title">巡檢點位填報</span>
           </h2>
-          <span id="scan-badge" class="hidden text-[11px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold border border-emerald-300 flex items-center gap-1">
-            <i data-lucide="check" class="w-3 h-3"></i> 掃碼已鎖定
+          <span id="scan-badge" class="hidden text-[11px] bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold border border-emerald-200 flex items-center gap-1">
+            <i data-lucide="check" class="w-3 h-3"></i> 掃碼成功
           </span>
         </div>
 
-        <form id="record-form" onsubmit="handleRecordSubmit(event)" class="space-y-3.5">
+        <form id="record-form" onsubmit="handleRecordSubmit(event)" class="space-y-4">
           <input type="hidden" id="edit-record-id" value="">
 
           <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1">所屬藥局區別 *</label>
+            <label class="block text-xs font-bold text-slate-600 mb-1.5">所屬藥局區別 *</label>
             <div class="grid grid-cols-4 gap-1.5" id="form-dept-btn-group">
-              <button type="button" onclick="selectFormDept('門診藥局')" class="dept-btn py-1.5 text-xs font-bold rounded-lg border border-blue-600 bg-blue-50 text-blue-700">門診藥局</button>
-              <button type="button" onclick="selectFormDept('住院藥局')" class="dept-btn py-1.5 text-xs font-bold rounded-lg border border-slate-300 bg-white text-slate-700">住院藥局</button>
-              <button type="button" onclick="selectFormDept('急診藥局')" class="dept-btn py-1.5 text-xs font-bold rounded-lg border border-slate-300 bg-white text-slate-700">急診藥局</button>
-              <button type="button" onclick="selectFormDept('藥庫')" class="dept-btn py-1.5 text-xs font-bold rounded-lg border border-slate-300 bg-white text-slate-700">藥庫</button>
+              <button type="button" onclick="selectFormDept('門診藥局')" class="dept-btn py-2 text-xs font-bold rounded-xl border border-blue-600 bg-blue-50/80 text-blue-700">門診藥局</button>
+              <button type="button" onclick="selectFormDept('住院藥局')" class="dept-btn py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50">住院藥局</button>
+              <button type="button" onclick="selectFormDept('急診藥局')" class="dept-btn py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50">急診藥局</button>
+              <button type="button" onclick="selectFormDept('藥庫')" class="dept-btn py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50">藥庫</button>
             </div>
           </div>
 
           <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1">監測點位 *</label>
-            <select id="record-location-select" onchange="onLocationChanged()" class="w-full rounded-lg border border-slate-300 p-2.5 text-sm sm:text-base font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 bg-slate-50" required></select>
-            <div class="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-              <i data-lucide="info" class="w-3.5 h-3.5"></i>
-              <span id="location-hint-text">標準提示</span>
+            <label class="block text-xs font-bold text-slate-600 mb-1.5">監測點位 *</label>
+            <select id="record-location-select" onchange="onLocationChanged()" class="w-full rounded-xl border border-slate-200 p-2.5 text-sm sm:text-base font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 bg-slate-50/50" required></select>
+            <div class="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1.5">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5 text-blue-600"></i>
+              <span id="location-hint-text">標準合規範圍提示</span>
             </div>
           </div>
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">時間</label>
-              <input type="datetime-local" id="record-datetime" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-blue-500" required>
+              <label class="block text-xs font-bold text-slate-600 mb-1">記錄時間</label>
+              <input type="datetime-local" id="record-datetime" class="w-full rounded-xl border border-slate-200 p-2.5 text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 bg-slate-50/30" required>
             </div>
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">巡檢人員 *</label>
-              <select id="record-operator-select" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-blue-500" required></select>
+              <label class="block text-xs font-bold text-slate-600 mb-1">巡檢人員 *</label>
+              <select id="record-operator-select" class="w-full rounded-xl border border-slate-200 p-2.5 text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 bg-slate-50/30" required></select>
             </div>
           </div>
 
-          <!-- 滾輪選擇式：溫度與相對濕度 -->
+          <!-- 滾輪下拉選單 -->
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+              <label class="block text-xs font-bold text-slate-600 mb-1 flex items-center justify-between">
                 <span>溫度 (°C) *</span>
-                <span class="text-[10px] text-blue-600 font-normal">滾輪下拉選取</span>
+                <span class="text-[10px] text-blue-600 font-normal">免鍵盤選取</span>
               </label>
-              <select id="record-temp-select" onchange="evaluateCompliance()" class="w-full rounded-lg border border-blue-300 p-2.5 text-base font-bold text-blue-900 bg-blue-50/50 focus:ring-2 focus:ring-blue-500"></select>
+              <select id="record-temp-select" onchange="evaluateCompliance()" class="w-full rounded-xl border border-blue-200 p-2.5 text-base font-black text-blue-900 bg-blue-50/40 focus:ring-2 focus:ring-blue-500"></select>
             </div>
             <div id="humidity-input-block">
-              <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+              <label class="block text-xs font-bold text-slate-600 mb-1 flex items-center justify-between">
                 <span>相對濕度 (%)</span>
-                <span class="text-[10px] text-slate-400 font-normal">免鍵盤輸入</span>
+                <span class="text-[10px] text-slate-400 font-normal">室溫專用</span>
               </label>
-              <select id="record-humidity-select" onchange="evaluateCompliance()" class="w-full rounded-lg border border-slate-300 p-2.5 text-base font-bold text-slate-800 bg-slate-50 focus:ring-2 focus:ring-blue-500"></select>
+              <select id="record-humidity-select" onchange="evaluateCompliance()" class="w-full rounded-xl border border-slate-200 p-2.5 text-base font-bold text-slate-800 bg-slate-50/40 focus:ring-2 focus:ring-blue-500"></select>
             </div>
           </div>
 
           <div>
-            <div id="record-status-badge" class="w-full py-2 px-3 rounded-lg text-xs font-bold text-center bg-green-100 text-green-800 border border-green-200 flex items-center justify-center gap-1.5">
-              <i data-lucide="check-circle" class="w-4 h-4"></i> 符合規範
+            <div id="record-status-badge" class="w-full py-2.5 px-3 rounded-xl text-xs font-bold text-center bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center justify-center gap-1.5">
+              <i data-lucide="check-circle-2" class="w-4 h-4"></i> 符合規範
             </div>
           </div>
 
           <div>
-            <input type="text" id="record-notes" placeholder="備註說明 (如：除霜、開冷氣、正常巡檢...)" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-blue-500">
+            <input type="text" id="record-notes" placeholder="備註說明 (選填：如定期除霜、開冷氣、標準巡檢...)" class="w-full rounded-xl border border-slate-200 p-2.5 text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 placeholder:text-slate-400">
           </div>
 
           <div class="flex gap-2 pt-2 border-t border-slate-100">
-            <button type="button" id="cancel-edit-btn" onclick="cancelEditMode()" class="hidden flex-1 py-2.5 border border-slate-300 rounded-lg text-slate-600 text-xs font-bold">取消修改</button>
-            <button type="submit" id="save-btn" class="flex-1 py-3 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] transition-transform text-white rounded-lg text-sm font-bold shadow flex items-center justify-center gap-1.5">
+            <button type="button" id="cancel-edit-btn" onclick="cancelEditMode()" class="hidden flex-1 py-3 border border-slate-200 rounded-xl text-slate-600 text-xs font-bold hover:bg-slate-50">取消修改</button>
+            <button type="submit" id="save-btn" class="flex-1 py-3 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] transition text-white rounded-xl text-sm font-bold shadow-md shadow-blue-500/20 flex items-center justify-center gap-2">
               <i data-lucide="save" class="w-4 h-4"></i>
-              <span id="submit-btn-text">確認登記 (寫入試算表)</span>
+              <span id="submit-btn-text">確認登記 (即時存入)</span>
             </button>
           </div>
         </form>
       </div>
     </section>
 
-    <!-- 頁籤 2: 巡查檢核表 -->
-    <section id="tab-check" class="space-y-3.5 hidden">
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+    <!-- 頁籤 2: 檢核 -->
+    <section id="tab-check" class="space-y-4 hidden">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5">
         <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
           <div>
-            <h2 class="text-base font-bold text-slate-800 flex items-center gap-1.5">
+            <h2 class="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-1.5">
               <i data-lucide="clipboard-check" class="w-5 h-5 text-blue-600"></i> 當日巡查合規檢核表
             </h2>
-            <p class="text-[11px] text-slate-500">室溫一日至少1次 ｜ 冷藏冷凍早午各1次</p>
+            <p class="text-[11px] text-slate-400 mt-0.5">室溫每日至少 1 次 ｜ 冷藏冷凍早/午各 1 次</p>
           </div>
-          <input type="date" id="check-date-filter" onchange="renderChecklist()" class="border border-slate-300 rounded-lg p-1.5 text-xs font-bold text-slate-700">
+          <input type="date" id="check-date-filter" onchange="renderChecklist()" class="border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-50/50">
         </div>
 
         <div class="mt-3">
-          <label class="block text-[11px] font-bold text-slate-500 mb-1.5">選擇藥局別檢核</label>
-          <div class="flex gap-1.5 overflow-x-auto no-scrollbar pb-1" id="check-dept-filter-group">
-            <button onclick="setCheckDept('ALL')" class="check-dept-btn px-3 py-1 text-xs font-bold rounded-full border border-blue-600 bg-blue-50 text-blue-700 whitespace-nowrap">全部藥局</button>
-            <button onclick="setCheckDept('門診藥局')" class="check-dept-btn px-3 py-1 text-xs font-bold rounded-full border border-slate-300 bg-white text-slate-700 whitespace-nowrap">門診藥局</button>
-            <button onclick="setCheckDept('住院藥局')" class="check-dept-btn px-3 py-1 text-xs font-bold rounded-full border border-slate-300 bg-white text-slate-700 whitespace-nowrap">住院藥局</button>
-            <button onclick="setCheckDept('急診藥局')" class="check-dept-btn px-3 py-1 text-xs font-bold rounded-full border border-slate-300 bg-white text-slate-700 whitespace-nowrap">急診藥局</button>
-            <button onclick="setCheckDept('藥庫')" class="check-dept-btn px-3 py-1 text-xs font-bold rounded-full border border-slate-300 bg-white text-slate-700 whitespace-nowrap">藥庫</button>
+          <div class="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5" id="check-dept-filter-group">
+            <button onclick="setCheckDept('ALL')" class="check-dept-btn px-3 py-1 text-xs font-bold rounded-lg border border-blue-600 bg-blue-50 text-blue-700 whitespace-nowrap">全部藥局</button>
+            <button onclick="setCheckDept('門診藥局')" class="check-dept-btn px-3 py-1 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-600 whitespace-nowrap">門診藥局</button>
+            <button onclick="setCheckDept('住院藥局')" class="check-dept-btn px-3 py-1 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-600 whitespace-nowrap">住院藥局</button>
+            <button onclick="setCheckDept('急診藥局')" class="check-dept-btn px-3 py-1 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-600 whitespace-nowrap">急診藥局</button>
+            <button onclick="setCheckDept('藥庫')" class="check-dept-btn px-3 py-1 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-600 whitespace-nowrap">藥庫</button>
           </div>
         </div>
 
-        <div class="mt-3">
-          <div class="flex justify-between text-xs font-semibold mb-1">
+        <div class="mt-3.5 pt-3 border-t border-slate-100">
+          <div class="flex justify-between text-xs font-bold mb-1.5">
             <span class="text-slate-600" id="check-progress-label">整體完成率</span>
-            <span id="check-progress-text" class="text-blue-600 font-bold">0%</span>
+            <span id="check-progress-text" class="text-blue-600">0%</span>
           </div>
-          <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+          <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
             <div id="check-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
           </div>
         </div>
       </div>
-      <div id="checklist-cards-container" class="space-y-2.5"></div>
+      <div id="checklist-cards-container" class="space-y-3"></div>
     </section>
 
-    <!-- 頁籤 3: 折線圖 -->
+    <!-- 頁籤 3: 趨勢 -->
     <section id="tab-chart" class="space-y-4 hidden">
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-3">
           <div>
             <label class="block text-xs font-bold text-slate-500 mb-1">藥局別</label>
-            <select id="chart-dept-filter" onchange="onChartDeptFilterChanged()" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm font-medium">
+            <select id="chart-dept-filter" onchange="onChartDeptFilterChanged()" class="w-full rounded-xl border border-slate-200 p-2 text-xs sm:text-sm font-semibold">
               <option value="ALL">全部藥局</option>
               <option value="門診藥局">門診藥局</option>
               <option value="住院藥局">住院藥局</option>
@@ -224,11 +223,11 @@
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-500 mb-1">監測點位</label>
-            <select id="chart-location-filter" onchange="updateDashboard()" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm font-medium"></select>
+            <select id="chart-location-filter" onchange="updateDashboard()" class="w-full rounded-xl border border-slate-200 p-2 text-xs sm:text-sm font-semibold"></select>
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-500 mb-1">設備類別</label>
-            <select id="chart-type-filter" onchange="updateDashboard()" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm font-medium">
+            <select id="chart-type-filter" onchange="updateDashboard()" class="w-full rounded-xl border border-slate-200 p-2 text-xs sm:text-sm font-semibold">
               <option value="ALL">全部類別</option>
               <option value="room">常溫區</option>
               <option value="fridge">冷藏冰箱</option>
@@ -238,49 +237,49 @@
         </div>
 
         <div class="mb-3">
-          <label class="block text-xs font-bold text-slate-500 mb-1.5">時間快捷區間</label>
+          <label class="block text-xs font-bold text-slate-500 mb-1">快捷區間</label>
           <div class="grid grid-cols-4 gap-1.5">
-            <button type="button" onclick="setQuickRange(7)" class="range-btn py-1.5 px-2 text-xs rounded-md border font-semibold text-center border-slate-300 bg-white text-slate-700">7天</button>
-            <button type="button" onclick="setQuickRange(30)" class="range-btn py-1.5 px-2 text-xs rounded-md border font-semibold text-center border-blue-600 bg-blue-50 text-blue-700">1個月</button>
-            <button type="button" onclick="setQuickRange(90)" class="range-btn py-1.5 px-2 text-xs rounded-md border font-semibold text-center border-slate-300 bg-white text-slate-700">3個月</button>
-            <button type="button" onclick="setQuickRange(180)" class="range-btn py-1.5 px-2 text-xs rounded-md border font-semibold text-center border-slate-300 bg-white text-slate-700">半年</button>
+            <button type="button" onclick="setQuickRange(7)" class="range-btn py-1.5 px-2 text-xs rounded-lg border font-semibold border-slate-200 bg-white text-slate-700">7天</button>
+            <button type="button" onclick="setQuickRange(30)" class="range-btn py-1.5 px-2 text-xs rounded-lg border font-semibold border-blue-600 bg-blue-50 text-blue-700">1個月</button>
+            <button type="button" onclick="setQuickRange(90)" class="range-btn py-1.5 px-2 text-xs rounded-lg border font-semibold border-slate-200 bg-white text-slate-700">3個月</button>
+            <button type="button" onclick="setQuickRange(180)" class="range-btn py-1.5 px-2 text-xs rounded-lg border font-semibold border-slate-200 bg-white text-slate-700">半年</button>
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 mb-3">
           <div>
-            <label class="block text-[11px] font-bold text-slate-500 mb-1">起始日期</label>
-            <input type="date" id="chart-start-date" onchange="onCustomDateChange()" class="w-full border border-slate-300 rounded-lg p-1.5 text-xs">
+            <label class="block text-[11px] font-bold text-slate-400 mb-0.5">起始日期</label>
+            <input type="date" id="chart-start-date" onchange="onCustomDateChange()" class="w-full border border-slate-200 rounded-lg p-1.5 text-xs font-semibold">
           </div>
           <div>
-            <label class="block text-[11px] font-bold text-slate-500 mb-1">結束日期</label>
-            <input type="date" id="chart-end-date" onchange="onCustomDateChange()" class="w-full border border-slate-300 rounded-lg p-1.5 text-xs">
+            <label class="block text-[11px] font-bold text-slate-400 mb-0.5">結束日期</label>
+            <input type="date" id="chart-end-date" onchange="onCustomDateChange()" class="w-full border border-slate-200 rounded-lg p-1.5 text-xs font-semibold">
           </div>
         </div>
 
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-100">
-          <div class="bg-blue-50 border border-blue-100 p-2.5 rounded-lg text-center">
-            <span class="text-[11px] text-blue-600 font-medium">區間筆數</span>
-            <div id="kpi-total" class="text-lg font-bold text-blue-900">0</div>
+          <div class="bg-blue-50/60 border border-blue-100 p-2.5 rounded-xl text-center">
+            <span class="text-[11px] text-blue-600 font-bold">區間筆數</span>
+            <div id="kpi-total" class="text-lg font-black text-blue-950">0</div>
           </div>
-          <div class="bg-emerald-50 border border-emerald-100 p-2.5 rounded-lg text-center">
-            <span class="text-[11px] text-emerald-600 font-medium">合規率</span>
-            <div id="kpi-compliance" class="text-lg font-bold text-emerald-900">100%</div>
+          <div class="bg-emerald-50/60 border border-emerald-100 p-2.5 rounded-xl text-center">
+            <span class="text-[11px] text-emerald-600 font-bold">合規率</span>
+            <div id="kpi-compliance" class="text-lg font-black text-emerald-950">100%</div>
           </div>
-          <div class="bg-indigo-50 border border-indigo-100 p-2.5 rounded-lg text-center">
-            <span class="text-[11px] text-indigo-600 font-medium">冷藏均溫 (2~8°C)</span>
-            <div id="kpi-fridge-avg" class="text-lg font-bold text-indigo-900">--</div>
+          <div class="bg-indigo-50/60 border border-indigo-100 p-2.5 rounded-xl text-center">
+            <span class="text-[11px] text-indigo-600 font-bold">冷藏均溫 (2~8°C)</span>
+            <div id="kpi-fridge-avg" class="text-lg font-black text-indigo-950">--</div>
           </div>
-          <div class="bg-cyan-50 border border-cyan-100 p-2.5 rounded-lg text-center">
-            <span class="text-[11px] text-cyan-600 font-medium">冷凍均溫 (-25~-15°C)</span>
-            <div id="kpi-freezer-avg" class="text-lg font-bold text-cyan-900">--</div>
+          <div class="bg-cyan-50/60 border border-cyan-100 p-2.5 rounded-xl text-center">
+            <span class="text-[11px] text-cyan-600 font-bold">冷凍均溫 (-25~-15°C)</span>
+            <div id="kpi-freezer-avg" class="text-lg font-black text-cyan-950">--</div>
           </div>
         </div>
       </div>
 
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4">
         <h3 class="font-bold text-slate-800 text-sm mb-2 flex items-center gap-1.5">
-          <i data-lucide="trending-up" class="w-4 h-4 text-blue-600"></i> 趨勢動態走勢圖
+          <i data-lucide="trending-up" class="w-4 h-4 text-blue-600"></i> 動態折線走向
         </h3>
         <div class="h-64 sm:h-80 w-full">
           <canvas id="tempHumidityChart"></canvas>
@@ -288,61 +287,61 @@
       </div>
     </section>
 
-    <!-- 頁籤 4: 巡檢日誌 -->
+    <!-- 頁籤 4: 日誌 -->
     <section id="tab-history" class="space-y-4 hidden">
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2">
-          <div class="flex items-center gap-1.5">
-            <i data-lucide="list" class="w-4 h-4 text-slate-600"></i>
-            <h3 class="font-bold text-sm text-slate-800">全部巡檢歷史清單</h3>
-            <span id="record-count-badge" class="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full font-bold">0 筆</span>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+        <div class="p-3.5 bg-slate-50/60 border-b border-slate-200/80 flex flex-wrap justify-between items-center gap-2">
+          <div class="flex items-center gap-2">
+            <i data-lucide="list" class="w-4 h-4 text-slate-500"></i>
+            <h3 class="font-bold text-sm text-slate-800">全部巡檢歷史</h3>
+            <span id="record-count-badge" class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-bold">0 筆</span>
           </div>
-          <button onclick="exportCSV()" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1">
+          <button onclick="exportCSV()" class="text-xs bg-white hover:bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-lg border border-slate-200 flex items-center gap-1 shadow-sm">
             <i data-lucide="download" class="w-3.5 h-3.5"></i> 匯出 CSV
           </button>
         </div>
 
         <div class="p-3 bg-white border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <select id="history-dept-filter" onchange="renderRecordTable()" class="border border-slate-300 rounded-lg p-2 text-xs">
+          <select id="history-dept-filter" onchange="renderRecordTable()" class="border border-slate-200 rounded-xl p-2 text-xs font-semibold">
             <option value="ALL">全部藥局</option>
             <option value="門診藥局">門診藥局</option>
             <option value="住院藥局">住院藥局</option>
             <option value="急診藥局">急診藥局</option>
             <option value="藥庫">藥庫</option>
           </select>
-          <input type="text" id="log-search-input" oninput="renderRecordTable()" placeholder="依位置或人員姓名搜尋..." class="border border-slate-300 rounded-lg p-2 text-xs">
+          <input type="text" id="log-search-input" oninput="renderRecordTable()" placeholder="依位置或人員姓名搜尋..." class="border border-slate-200 rounded-xl p-2 text-xs">
         </div>
 
         <div class="divide-y divide-slate-100" id="records-list-container"></div>
       </div>
     </section>
 
-    <!-- 頁籤 5: 後臺管理 -->
+    <!-- 頁籤 5: 後臺 -->
     <section id="tab-admin" class="space-y-4 hidden">
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5">
         <h3 class="text-sm font-bold text-slate-800 mb-2.5 flex items-center gap-1.5">
-          <i data-lucide="users" class="w-4 h-4 text-blue-600"></i> 巡檢人員名單
+          <i data-lucide="users" class="w-4 h-4 text-blue-600"></i> 巡檢人員名單管理
         </h3>
         <div class="flex gap-2 mb-3">
-          <input type="text" id="new-staff-name" placeholder="姓名 (例：陳藥師)" class="flex-1 border border-slate-300 rounded-lg p-2 text-xs sm:text-sm">
-          <input type="text" id="new-staff-role" placeholder="職稱" class="w-24 border border-slate-300 rounded-lg p-2 text-xs sm:text-sm">
-          <button onclick="addStaff()" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold whitespace-nowrap">新增</button>
+          <input type="text" id="new-staff-name" placeholder="姓名 (例：陳藥師)" class="flex-1 border border-slate-200 rounded-xl p-2 text-xs sm:text-sm">
+          <input type="text" id="new-staff-role" placeholder="職稱" class="w-24 border border-slate-200 rounded-xl p-2 text-xs sm:text-sm">
+          <button onclick="addStaff()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold whitespace-nowrap">新增</button>
         </div>
         <div id="staff-tags-container" class="flex flex-wrap gap-1.5"></div>
       </div>
 
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5">
         <h3 class="text-sm font-bold text-slate-800 mb-3 flex items-center gap-1.5">
           <i data-lucide="map-pin" class="w-4 h-4 text-blue-600"></i>
           <span id="loc-form-title">新增/設定溫濕度監測點</span>
         </h3>
 
-        <form id="location-form" onsubmit="handleLocationSubmit(event)" class="space-y-3">
+        <form id="location-form" onsubmit="handleLocationSubmit(event)" class="space-y-3.5">
           <input type="hidden" id="edit-loc-id" value="">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">所屬藥局區別 *</label>
-              <select id="loc-dept" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm font-semibold">
+              <label class="block text-xs font-bold text-slate-600 mb-1">所屬藥局區別 *</label>
+              <select id="loc-dept" class="w-full rounded-xl border border-slate-200 p-2 text-xs sm:text-sm font-semibold">
                 <option value="門診藥局">門診藥局</option>
                 <option value="住院藥局">住院藥局</option>
                 <option value="急診藥局">急診藥局</option>
@@ -350,89 +349,96 @@
               </select>
             </div>
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">點位名稱 *</label>
-              <input type="text" id="loc-name" placeholder="例如：1號疫苗冰箱" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm" required>
+              <label class="block text-xs font-bold text-slate-600 mb-1">點位名稱 *</label>
+              <input type="text" id="loc-name" placeholder="例如：1號疫苗冰箱" class="w-full rounded-xl border border-slate-200 p-2 text-xs sm:text-sm" required>
             </div>
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">設備類型 *</label>
-              <select id="loc-zone-type" onchange="onZoneTypeChange()" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm font-semibold">
+              <label class="block text-xs font-bold text-slate-600 mb-1">設備類型 *</label>
+              <select id="loc-zone-type" onchange="onZoneTypeChange()" class="w-full rounded-xl border border-slate-200 p-2 text-xs sm:text-sm font-semibold">
                 <option value="room">常溫/室溫區 (19~25°C)</option>
                 <option value="fridge">冷藏冰箱 (2~8°C)</option>
                 <option value="freezer">冷凍冰箱 (-25~-15°C)</option>
               </select>
             </div>
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">預設填寫溫度 (°C)</label>
-              <input type="number" step="0.1" id="loc-default-temp" value="22" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm font-bold" required>
+              <label class="block text-xs font-bold text-slate-600 mb-1">預設填寫溫度 (°C)</label>
+              <input type="number" step="0.1" id="loc-default-temp" value="22" class="w-full rounded-xl border border-slate-200 p-2 text-xs sm:text-sm font-bold" required>
             </div>
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label class="block text-xs font-bold text-slate-700 mb-1">溫度下限 (°C)</label>
-                <input type="number" step="0.1" id="loc-min-temp" value="19" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm" required>
+                <label class="block text-xs font-bold text-slate-600 mb-1">溫度下限 (°C)</label>
+                <input type="number" step="0.1" id="loc-min-temp" value="19" class="w-full rounded-xl border border-slate-200 p-2 text-xs sm:text-sm font-semibold" required>
               </div>
               <div>
-                <label class="block text-xs font-bold text-slate-700 mb-1">溫度上限 (°C)</label>
-                <input type="number" step="0.1" id="loc-max-temp" value="25" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm" required>
+                <label class="block text-xs font-bold text-slate-600 mb-1">溫度上限 (°C)</label>
+                <input type="number" step="0.1" id="loc-max-temp" value="25" class="w-full rounded-xl border border-slate-200 p-2 text-xs sm:text-sm font-semibold" required>
               </div>
             </div>
             <div id="loc-max-hum-container">
-              <label class="block text-xs font-bold text-slate-700 mb-1">濕度上限 (%)</label>
-              <input type="number" step="1" id="loc-max-humidity" value="60" class="w-full rounded-lg border border-slate-300 p-2 text-xs sm:text-sm">
+              <label class="block text-xs font-bold text-slate-600 mb-1">濕度上限 (%)</label>
+              <input type="number" step="1" id="loc-max-humidity" value="60" class="w-full rounded-xl border border-slate-200 p-2 text-xs sm:text-sm font-semibold">
             </div>
           </div>
           <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
-            <button type="button" id="cancel-loc-btn" onclick="resetLocationForm()" class="hidden px-3 py-1.5 border border-slate-300 rounded-lg text-slate-600 text-xs">取消</button>
-            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow">儲存設定</button>
+            <button type="button" id="cancel-loc-btn" onclick="resetLocationForm()" class="hidden px-3.5 py-1.5 border border-slate-200 rounded-xl text-slate-600 text-xs">取消</button>
+            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm">儲存設定</button>
           </div>
         </form>
       </div>
 
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="p-3.5 bg-slate-50 border-b border-slate-200">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+        <div class="p-3.5 bg-slate-50/60 border-b border-slate-200/80">
           <h4 class="font-bold text-xs sm:text-sm text-slate-800">現有監測點與專屬 QR 標籤</h4>
         </div>
-        <div class="p-3 grid grid-cols-1 sm:grid-cols-2 gap-3" id="location-cards-container"></div>
+        <div class="p-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3" id="location-cards-container"></div>
       </div>
     </section>
 
   </main>
 
   <!-- 鏡頭掃碼視窗 -->
-  <div id="scanner-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
-    <div class="bg-white rounded-2xl max-w-sm w-full p-4 text-center space-y-3 shadow-2xl">
+  <div id="scanner-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-5 text-center space-y-3.5 shadow-2xl">
       <div class="flex justify-between items-center pb-2 border-b border-slate-100">
         <h3 class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-          <i data-lucide="camera" class="w-4 h-4 text-blue-600"></i> 對準溫度計 QR Code
+          <i data-lucide="camera" class="w-4 h-4 text-blue-600"></i> 對準點位 QR Code
         </h3>
         <button onclick="closeCameraScanner()" class="text-slate-400 hover:text-slate-600">✕</button>
       </div>
-      <div id="scanner-reader" class="w-full aspect-square rounded-xl overflow-hidden bg-black flex items-center justify-center"></div>
-      <p class="text-[11px] text-slate-500">掃描成功後自動選定點位並帶入預設推薦溫度</p>
-      <button onclick="closeCameraScanner()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-700">關閉鏡頭</button>
+      <div id="scanner-reader" class="w-full aspect-square rounded-2xl overflow-hidden bg-black flex items-center justify-center"></div>
+      <p class="text-[11px] text-slate-400">掃描成功後自動選定點位並帶入預設推薦溫度</p>
+      <button onclick="closeCameraScanner()" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-slate-700">關閉鏡頭</button>
     </div>
   </div>
 
   <!-- QR 標籤預覽視窗 -->
-  <div id="qr-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
-    <div class="bg-white rounded-2xl max-w-xs w-full p-5 shadow-2xl text-center space-y-3">
-      <h3 id="qr-modal-title" class="text-sm font-bold text-slate-800">專屬 QR 標籤</h3>
-      <div class="flex justify-center p-3 bg-slate-50 rounded-xl border border-slate-200">
+  <div id="qr-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-3xl max-w-xs w-full p-5 shadow-2xl text-center space-y-3.5">
+      <h3 id="qr-modal-title" class="text-sm font-bold text-slate-800">點位專屬 QR 標籤</h3>
+      <div class="flex justify-center p-3 bg-slate-50 rounded-2xl border border-slate-100">
         <div id="qrcode-box"></div>
       </div>
-      <div class="text-[11px] text-slate-600 bg-blue-50 p-2.5 rounded-lg border border-blue-100 text-left">
+      <div class="text-[11px] text-slate-600 bg-blue-50/50 p-2.5 rounded-xl border border-blue-100 text-left">
         <strong>藥局別：</strong> <span id="qr-modal-dept"></span><br>
         <strong>預設溫度：</strong> <span id="qr-modal-defaults"></span><br>
         <strong>合規範圍：</strong> <span id="qr-modal-ranges"></span>
       </div>
       <div class="flex gap-2">
-        <button onclick="document.getElementById('qr-modal').classList.add('hidden')" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-slate-700 text-xs">關閉</button>
-        <button onclick="window.print()" class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold">列印</button>
+        <button onclick="document.getElementById('qr-modal').classList.add('hidden')" class="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-slate-700 text-xs font-bold">關閉</button>
+        <button onclick="window.print()" class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold">列印</button>
       </div>
     </div>
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbzebEoT9GKj5SRWuUEkwfmcvHVqqlxxhqXWLpu3H49ztKSFbtlb4uS9C5fQLaKuKt6R/exec";
+    // ==========================================
+    // 請填入您的 Supabase 設定
+    // ==========================================
+const SUPABASE_URL = "https://gavpmvaozsixhahofzyn.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
+    
+    // 初始化 Supabase 客戶端
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let locations = [];
     let staffList = [];
@@ -448,7 +454,7 @@
       initDatetime();
       initDefaultDates();
       initHumidityOptions();
-      fetchSheetData();
+      loadAllData();
     });
 
     // 1. 字體大小縮放切換
@@ -465,9 +471,9 @@
       ['md', 'lg', 'xl'].forEach(s => {
         const btn = document.getElementById(`font-btn-${s}`);
         if (s === size) {
-          btn.className = "px-2 py-0.5 rounded bg-white text-blue-800 shadow-sm";
+          btn.className = "px-2 py-0.5 rounded bg-white text-blue-600 shadow-sm";
         } else {
-          btn.className = "px-2 py-0.5 rounded text-blue-100 hover:text-white";
+          btn.className = "px-2 py-0.5 rounded text-slate-500 hover:text-slate-800";
         }
       });
 
@@ -528,26 +534,50 @@
       document.getElementById('chart-start-date').value = past30.toISOString().slice(0, 10);
     }
 
-    function setLoading(isLoading) {
-      const bar = document.getElementById('loading-bar');
-      if (isLoading) bar.classList.remove('hidden');
-      else bar.classList.add('hidden');
-    }
+    // ==========================================
+    // Supabase 毫秒直讀直寫核心
+    // ==========================================
+    async function loadAllData() {
+      const icon = document.getElementById('refresh-icon');
+      if (icon) icon.classList.add('animate-spin');
 
-    // 關鍵修正：加入隨機時間戳記與 cache: 'no-store'，防止瀏覽器讀到舊快取
-    async function fetchSheetData() {
-      setLoading(true);
       try {
-        const cacheBusterUrl = API_URL + (API_URL.includes('?') ? '&' : '?') + 't=' + Date.now();
-        const res = await fetch(cacheBusterUrl, {
-          method: 'GET',
-          cache: 'no-store',
-          redirect: 'follow'
-        });
-        const data = await res.json();
-        locations = data.locations || [];
-        staffList = data.staffList || [];
-        records = data.records || [];
+        const [locRes, staffRes, recRes] = await Promise.all([
+          supabaseClient.from('locations').select('*'),
+          supabaseClient.from('staff').select('*'),
+          supabaseClient.from('records').select('*').order('timestamp', { ascending: false }).limit(300)
+        ]);
+
+        if (locRes.error) throw locRes.error;
+        if (staffRes.error) throw staffRes.error;
+        if (recRes.error) throw recRes.error;
+
+        // 欄位名稱對齊
+        locations = (locRes.data || []).map(l => ({
+          id: l.id,
+          dept: l.dept,
+          name: l.name,
+          zoneType: l.zone_type,
+          defaultTemp: Number(l.default_temp),
+          minTemp: Number(l.min_temp),
+          maxTemp: Number(l.max_temp),
+          maxHumidity: l.max_humidity !== null ? Number(l.max_humidity) : null
+        }));
+
+        staffList = staffRes.data || [];
+        records = (recRes.data || []).map(r => ({
+          id: r.id,
+          timestamp: r.timestamp,
+          dept: r.dept,
+          locId: r.loc_id,
+          locName: r.loc_name,
+          zoneType: r.zone_type,
+          temp: Number(r.temp),
+          humidity: r.humidity !== null ? Number(r.humidity) : null,
+          status: r.status,
+          operator: r.operator,
+          notes: r.notes || ''
+        }));
 
         renderStaffUI();
         renderLocationSelect();
@@ -556,23 +586,21 @@
         renderChecklist();
         checkUrlParams();
       } catch (err) {
-        alert('讀取 Google Sheet 失敗: ' + err.message);
+        alert('Supabase 資料載入失敗: ' + err.message);
       } finally {
-        setLoading(false);
+        if (icon) icon.classList.remove('animate-spin');
       }
     }
 
     function switchTab(tab) {
       document.querySelectorAll('main > section').forEach(sec => sec.classList.add('hidden'));
       document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('bg-white', 'text-blue-800', 'shadow-sm');
-        btn.classList.add('text-blue-100');
+        btn.className = "tab-btn flex-1 min-w-[76px] py-1.5 px-3 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 flex items-center justify-center gap-1.5 whitespace-nowrap";
       });
 
       document.getElementById(`tab-${tab}`).classList.remove('hidden');
       const activeBtn = document.getElementById(`tab-${tab}-btn`);
-      activeBtn.classList.add('bg-white', 'text-blue-800', 'shadow-sm');
-      activeBtn.classList.remove('text-blue-100');
+      activeBtn.className = "tab-btn flex-1 min-w-[76px] py-1.5 px-3 rounded-lg text-xs font-bold bg-blue-600 text-white shadow-sm shadow-blue-600/20 flex items-center justify-center gap-1.5 whitespace-nowrap";
 
       if (tab === 'chart') {
         renderChartFilters();
@@ -589,9 +617,9 @@
       currentSelectedDept = dept;
       document.querySelectorAll('.dept-btn').forEach(btn => {
         if (btn.textContent.trim() === dept) {
-          btn.className = "dept-btn py-1.5 text-xs font-bold rounded-lg border border-blue-600 bg-blue-50 text-blue-700";
+          btn.className = "dept-btn py-2 text-xs font-bold rounded-xl border border-blue-600 bg-blue-50/80 text-blue-700";
         } else {
-          btn.className = "dept-btn py-1.5 text-xs font-bold rounded-lg border border-slate-300 bg-white text-slate-700";
+          btn.className = "dept-btn py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
         }
       });
       renderLocationSelect();
@@ -660,10 +688,10 @@
       }
 
       if (isCompliant) {
-        badge.className = "w-full py-2 px-3 rounded-lg text-xs font-bold text-center bg-green-100 text-green-800 border border-green-200 flex items-center justify-center gap-1.5";
-        badge.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i> 符合規範`;
+        badge.className = "w-full py-2.5 px-3 rounded-xl text-xs font-bold text-center bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center justify-center gap-1.5";
+        badge.innerHTML = `<i data-lucide="check-circle-2" class="w-4 h-4"></i> 符合規範`;
       } else {
-        badge.className = "w-full py-2 px-3 rounded-lg text-xs font-bold text-center bg-red-100 text-red-800 border border-red-200 flex items-center justify-center gap-1.5 animate-pulse";
+        badge.className = "w-full py-2.5 px-3 rounded-xl text-xs font-bold text-center bg-rose-50 text-rose-800 border border-rose-200 flex items-center justify-center gap-1.5 animate-pulse";
         badge.innerHTML = `<i data-lucide="alert-triangle" class="w-4 h-4"></i> 異常警示 (${reasons.join(', ')})`;
       }
       lucide.createIcons();
@@ -690,13 +718,14 @@
         status = status === '合格' ? '濕度過高' : '溫濕度皆異常';
       }
 
-      const rec = {
-        id: editId || ('REC-' + Date.now().toString().slice(-6)),
+      const recId = editId || ('REC-' + Date.now().toString().slice(-6));
+      const payload = {
+        id: recId,
         timestamp: formattedDt,
         dept: loc.dept,
-        locId: loc.id,
-        locName: loc.name,
-        zoneType: loc.zoneType,
+        loc_id: loc.id,
+        loc_name: loc.name,
+        zone_type: loc.zoneType,
         temp: tempVal,
         humidity: humVal,
         status: status,
@@ -704,33 +733,43 @@
         notes: notes
       };
 
-      setLoading(true);
       const btn = document.getElementById('save-btn');
       btn.disabled = true;
 
       try {
-        await fetch(API_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'SAVE_RECORD', data: rec })
-        });
+        const { error } = await supabaseClient.from('records').upsert([payload]);
+        if (error) throw error;
+
+        // 本地陣列同步
+        const localRec = {
+          id: recId,
+          timestamp: formattedDt,
+          dept: loc.dept,
+          locId: loc.id,
+          locName: loc.name,
+          zoneType: loc.zoneType,
+          temp: tempVal,
+          humidity: humVal,
+          status: status,
+          operator: operator,
+          notes: notes
+        };
 
         if (editId) {
           const idx = records.findIndex(r => r.id === editId);
-          if (idx !== -1) records[idx] = rec;
+          if (idx !== -1) records[idx] = localRec;
           cancelEditMode();
         } else {
-          records.unshift(rec);
+          records.unshift(localRec);
         }
+
         document.getElementById('scan-badge').classList.add('hidden');
         renderRecordTable();
         renderChecklist();
-        alert('記錄已同步登記至 Google 試算表！');
+        alert('記錄已即時存入 Supabase！');
       } catch (err) {
-        alert('登記失敗: ' + err.message);
+        alert('存入失敗: ' + err.message);
       } finally {
-        setLoading(false);
         btn.disabled = false;
       }
     }
@@ -745,7 +784,7 @@
       document.getElementById('record-location-select').value = record.locId;
       
       const loc = locations.find(l => l.id === record.locId);
-      populateTemperatureOptions(loc.zoneType, record.temp);
+      if (loc) populateTemperatureOptions(loc.zoneType, record.temp);
 
       document.getElementById('record-datetime').value = record.timestamp.replace(' ', 'T');
       document.getElementById('record-temp-select').value = record.temp.toFixed(1);
@@ -764,30 +803,23 @@
 
     function cancelEditMode() {
       document.getElementById('edit-record-id').value = '';
-      document.getElementById('form-action-title').textContent = '巡檢溫濕度登記';
-      document.getElementById('submit-btn-text').textContent = '確認登記 (寫入試算表)';
+      document.getElementById('form-action-title').textContent = '巡檢點位填報';
+      document.getElementById('submit-btn-text').textContent = '確認登記 (即時存入)';
       document.getElementById('cancel-edit-btn').classList.add('hidden');
       initDatetime();
       onLocationChanged();
     }
 
     async function deleteRecord(id) {
-      if (!confirm('確定從試算表中刪除此筆記錄？')) return;
-      setLoading(true);
+      if (!confirm('確定刪除此筆記錄？')) return;
       try {
-        await fetch(API_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'DELETE_RECORD', recordId: id })
-        });
+        const { error } = await supabaseClient.from('records').delete().eq('id', id);
+        if (error) throw error;
         records = records.filter(r => r.id !== id);
         renderRecordTable();
         renderChecklist();
       } catch (err) {
         alert('刪除失敗: ' + err.message);
-      } finally {
-        setLoading(false);
       }
     }
 
@@ -795,9 +827,9 @@
       checkSelectedDept = dept;
       document.querySelectorAll('.check-dept-btn').forEach(btn => {
         if (btn.textContent.trim() === (dept === 'ALL' ? '全部藥局' : dept)) {
-          btn.className = "check-dept-btn px-3 py-1 text-xs font-bold rounded-full border border-blue-600 bg-blue-50 text-blue-700 whitespace-nowrap";
+          btn.className = "check-dept-btn px-3 py-1 text-xs font-bold rounded-lg border border-blue-600 bg-blue-50 text-blue-700 whitespace-nowrap";
         } else {
-          btn.className = "check-dept-btn px-3 py-1 text-xs font-bold rounded-full border border-slate-300 bg-white text-slate-700 whitespace-nowrap";
+          btn.className = "check-dept-btn px-3 py-1 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-600 whitespace-nowrap";
         }
       });
       renderChecklist();
@@ -813,7 +845,7 @@
       let completedTasks = 0;
 
       if (targetLocs.length === 0) {
-        container.innerHTML = `<div class="p-6 text-center text-slate-400 text-xs bg-white rounded-xl border border-slate-200">此藥局尚未設定監測點位</div>`;
+        container.innerHTML = `<div class="p-8 text-center text-slate-400 text-xs bg-white rounded-2xl border border-slate-200/80">此藥局尚未設定監測點位</div>`;
         document.getElementById('check-progress-text').textContent = `0%`;
         document.getElementById('check-progress-bar').style.width = `0%`;
         return;
@@ -826,27 +858,27 @@
           totalTasks += 1;
           const hasRecord = locRecs.length > 0;
           if (hasRecord) completedTasks += 1;
-          const latest = locRecs[locRecs.length - 1];
+          const latest = locRecs[0] || locRecs[locRecs.length - 1];
 
           return `
-            <div class="p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
               <div>
                 <div class="flex items-center gap-1.5">
-                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">${loc.dept}</span>
-                  <span class="text-xs font-bold text-slate-800">${loc.name}</span>
-                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold">常溫 (日巡1次)</span>
+                  <span class="text-[10px] px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold">${loc.dept}</span>
+                  <span class="text-sm font-bold text-slate-800">${loc.name}</span>
+                  <span class="text-[10px] px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-bold">常溫 (日巡1次)</span>
                 </div>
-                <div class="text-xs text-slate-500 mt-1">
-                  ${hasRecord ? `最新: <strong class="text-slate-800">${latest.temp}°C / ${latest.humidity}%</strong> (${latest.operator} @ ${latest.timestamp.slice(11)})` : `<span class="text-rose-600 font-bold">今日尚未巡檢</span>`}
+                <div class="text-xs text-slate-500 mt-1.5">
+                  ${hasRecord ? `最新: <strong class="text-slate-900">${latest.temp}°C / ${latest.humidity}%</strong> (${latest.operator} @ ${latest.timestamp.slice(11)})` : `<span class="text-rose-600 font-bold">今日尚未巡檢</span>`}
                 </div>
               </div>
               <div>
                 ${hasRecord ? `
-                  <span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-lg flex items-center gap-1">
+                  <span class="px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-xl flex items-center gap-1 border border-emerald-100">
                     <i data-lucide="check" class="w-3.5 h-3.5"></i> 已巡檢
                   </span>
                 ` : `
-                  <button onclick="goToRecord('${loc.dept}', '${loc.id}')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow flex items-center gap-1">
+                  <button onclick="goToRecord('${loc.dept}', '${loc.id}')" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1">
                     <i data-lucide="plus" class="w-3.5 h-3.5"></i> 補記
                   </button>
                 `}
@@ -861,16 +893,16 @@
           if (morningRec) completedTasks += 1;
           if (afternoonRec) completedTasks += 1;
 
-          const typeTag = loc.zoneType === 'freezer' ? 'bg-cyan-100 text-cyan-800' : 'bg-indigo-100 text-indigo-800';
+          const typeTag = loc.zoneType === 'freezer' ? 'bg-cyan-50 text-cyan-800' : 'bg-indigo-50 text-indigo-800';
           const typeName = loc.zoneType === 'freezer' ? '冷凍' : '冷藏';
 
           return `
-            <div class="p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm space-y-2">
+            <div class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-2.5">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-1.5">
-                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">${loc.dept}</span>
-                  <span class="text-xs font-bold text-slate-800">${loc.name}</span>
-                  <span class="text-[10px] px-1.5 py-0.5 rounded ${typeTag} font-bold">${typeName} (早/午各1次)</span>
+                  <span class="text-[10px] px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold">${loc.dept}</span>
+                  <span class="text-sm font-bold text-slate-800">${loc.name}</span>
+                  <span class="text-[10px] px-2 py-0.5 rounded-md ${typeTag} font-bold">${typeName} (早/午各1次)</span>
                 </div>
                 <button onclick="goToRecord('${loc.dept}', '${loc.id}')" class="text-xs text-blue-600 font-bold hover:underline flex items-center gap-0.5">
                   <i data-lucide="edit-3" class="w-3 h-3"></i> 登記
@@ -878,20 +910,20 @@
               </div>
 
               <div class="grid grid-cols-2 gap-2 text-xs">
-                <div class="p-2 rounded-lg border ${morningRec ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900' : 'bg-rose-50/50 border-rose-200 text-rose-800'}">
+                <div class="p-2.5 rounded-xl border ${morningRec ? 'bg-emerald-50/40 border-emerald-200 text-emerald-900' : 'bg-rose-50/40 border-rose-200 text-rose-800'}">
                   <div class="flex justify-between items-center font-bold text-[11px]">
                     <span>早班 (12:00前)</span>
                     <span>${morningRec ? '✓ 完成' : '✗ 待檢'}</span>
                   </div>
-                  <div class="text-[11px] mt-0.5 font-mono">${morningRec ? `${morningRec.temp}°C (${morningRec.operator})` : '--'}</div>
+                  <div class="text-xs mt-1 font-mono">${morningRec ? `${morningRec.temp}°C (${morningRec.operator})` : '--'}</div>
                 </div>
 
-                <div class="p-2 rounded-lg border ${afternoonRec ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900' : 'bg-rose-50/50 border-rose-200 text-rose-800'}">
+                <div class="p-2.5 rounded-xl border ${afternoonRec ? 'bg-emerald-50/40 border-emerald-200 text-emerald-900' : 'bg-rose-50/40 border-rose-200 text-rose-800'}">
                   <div class="flex justify-between items-center font-bold text-[11px]">
                     <span>午班 (12:00後)</span>
                     <span>${afternoonRec ? '✓ 完成' : '✗ 待檢'}</span>
                   </div>
-                  <div class="text-[11px] mt-0.5 font-mono">${afternoonRec ? `${afternoonRec.temp}°C (${afternoonRec.operator})` : '--'}</div>
+                  <div class="text-xs mt-1 font-mono">${afternoonRec ? `${afternoonRec.temp}°C (${afternoonRec.operator})` : '--'}</div>
                 </div>
               </div>
             </div>
@@ -934,15 +966,15 @@
       document.getElementById('chart-start-date').value = past.toISOString().slice(0, 10);
 
       document.querySelectorAll('.range-btn').forEach(b => {
-        b.className = "range-btn py-1.5 px-2 text-xs rounded-md border font-semibold text-center border-slate-300 bg-white text-slate-700";
+        b.className = "range-btn py-1.5 px-2 text-xs rounded-lg border font-semibold border-slate-200 bg-white text-slate-700";
       });
-      event.target.className = "range-btn py-1.5 px-2 text-xs rounded-md border font-semibold text-center border-blue-600 bg-blue-50 text-blue-700";
+      event.target.className = "range-btn py-1.5 px-2 text-xs rounded-lg border font-semibold border-blue-600 bg-blue-50 text-blue-700";
       updateDashboard();
     }
 
     function onCustomDateChange() {
       document.querySelectorAll('.range-btn').forEach(b => {
-        b.className = "range-btn py-1.5 px-2 text-xs rounded-md border font-semibold text-center border-slate-300 bg-white text-slate-700";
+        b.className = "range-btn py-1.5 px-2 text-xs rounded-lg border font-semibold border-slate-200 bg-white text-slate-700";
       });
       updateDashboard();
     }
@@ -986,7 +1018,7 @@
               label: '溫度 (°C)',
               data: filtered.map(d => d.temp),
               borderColor: '#2563eb',
-              backgroundColor: 'rgba(37,99,235,0.1)',
+              backgroundColor: 'rgba(37,99,235,0.08)',
               yAxisID: 'y-temp',
               tension: 0.25,
               pointRadius: 3
@@ -995,7 +1027,7 @@
               label: '濕度 (%)',
               data: filtered.map(d => d.humidity !== null ? d.humidity : null),
               borderColor: '#059669',
-              backgroundColor: 'rgba(5,150,105,0.1)',
+              backgroundColor: 'rgba(5,150,105,0.08)',
               yAxisID: 'y-hum',
               tension: 0.25,
               pointRadius: 3
@@ -1020,46 +1052,49 @@
 
       const filtered = records.filter(r => {
         const matchDept = (deptFilter === 'ALL' || r.dept === deptFilter);
-        const matchText = r.locName.toLowerCase().includes(search) || r.operator.toLowerCase().includes(search);
+        const matchText = (r.locName || '').toLowerCase().includes(search) || (r.operator || '').toLowerCase().includes(search);
         return matchDept && matchText;
       });
 
       document.getElementById('record-count-badge').textContent = `${filtered.length} 筆`;
 
       if (filtered.length === 0) {
-        container.innerHTML = `<div class="p-6 text-center text-slate-400 text-xs">目前尚無符合紀錄</div>`;
+        container.innerHTML = `<div class="p-8 text-center text-slate-400 text-xs">目前尚無符合紀錄</div>`;
         return;
       }
 
       container.innerHTML = filtered.map(r => {
         const isAlert = r.status !== '合格';
-        let badgeColor = r.zoneType === 'freezer' ? 'bg-cyan-100 text-cyan-800' : (r.zoneType === 'fridge' ? 'bg-indigo-100 text-indigo-800' : 'bg-amber-100 text-amber-800');
+        let badgeColor = r.zoneType === 'freezer' ? 'bg-cyan-50 text-cyan-800' : (r.zoneType === 'fridge' ? 'bg-indigo-50 text-indigo-800' : 'bg-amber-50 text-amber-800');
         let typeName = r.zoneType === 'freezer' ? '冷凍' : (r.zoneType === 'fridge' ? '冷藏' : '常溫');
 
+        const displayTemp = (r.temp !== null && r.temp !== undefined && !isNaN(r.temp)) ? Number(r.temp).toFixed(1) : '--';
+        const displayHum = (r.humidity !== null && r.humidity !== undefined && !isNaN(r.humidity)) ? Number(r.humidity).toFixed(1) + '%' : '-';
+
         return `
-          <div class="p-3 hover:bg-slate-50 flex items-center justify-between gap-2">
+          <div class="p-3.5 hover:bg-slate-50/70 transition flex items-center justify-between gap-2">
             <div class="space-y-1">
               <div class="flex items-center gap-1.5">
-                <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">${r.dept}</span>
-                <span class="text-xs font-bold text-slate-900">${r.locName}</span>
-                <span class="text-[10px] px-1.5 py-0.2 rounded-full ${badgeColor} font-bold">${typeName}</span>
-                <span class="text-[10px] px-1.5 py-0.2 rounded font-bold ${isAlert ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-800'}">${r.status}</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold">${r.dept}</span>
+                <span class="text-xs sm:text-sm font-bold text-slate-900">${r.locName}</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full ${badgeColor} font-bold">${typeName}</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-md font-bold ${isAlert ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-800'}">${r.status}</span>
               </div>
-              <div class="text-[11px] text-slate-500 font-mono flex items-center gap-2">
+              <div class="text-[11px] text-slate-400 font-mono flex items-center gap-2">
                 <span>${r.timestamp}</span>
                 <span>巡檢: ${r.operator}</span>
-                ${r.notes ? `<span class="truncate max-w-[120px]">備註: ${r.notes}</span>` : ''}
+                ${r.notes ? `<span class="truncate max-w-[140px] text-slate-500">備註: ${r.notes}</span>` : ''}
               </div>
             </div>
             
             <div class="flex items-center gap-3">
               <div class="text-right font-mono">
-                <div class="text-sm font-bold ${isAlert && r.status.includes('溫') ? 'text-red-600' : 'text-slate-900'}">${r.temp.toFixed(1)}°C</div>
-                <div class="text-[10px] text-slate-500">${r.humidity !== null ? r.humidity.toFixed(1) + '%' : '-'}</div>
+                <div class="text-sm font-black ${isAlert && r.status.includes('溫') ? 'text-rose-600' : 'text-slate-900'}">${displayTemp}°C</div>
+                <div class="text-[10px] text-slate-400">${displayHum}</div>
               </div>
               <div class="flex flex-col gap-1 text-[11px]">
                 <button onclick="editRecord('${r.id}')" class="text-blue-600 font-bold hover:underline">編輯</button>
-                <button onclick="deleteRecord('${r.id}')" class="text-red-500 font-bold hover:underline">刪除</button>
+                <button onclick="deleteRecord('${r.id}')" class="text-rose-500 font-bold hover:underline">刪除</button>
               </div>
             </div>
           </div>
@@ -1075,28 +1110,37 @@
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 220, height: 220 } },
         (decodedText) => {
-          let targetLoc = null;
+          let text = String(decodedText || '').trim();
+          let targetLocId = null;
+
           try {
-            const url = new URL(decodedText);
-            targetLoc = url.searchParams.get('loc');
-          } catch (e) {
-            const match = decodedText.match(/loc=([^&]+)/);
-            if (match) targetLoc = match[1];
+            if (text.startsWith('http://') || text.startsWith('https://')) {
+              const url = new URL(text);
+              targetLocId = url.searchParams.get('loc');
+            }
+          } catch (e) {}
+
+          if (!targetLocId) {
+            const match = text.match(/loc=([^&?#\s]+)/i);
+            if (match) targetLocId = match[1];
           }
 
-          if (targetLoc) {
-            const loc = locations.find(l => l.id === targetLoc);
-            if (loc) {
-              closeCameraScanner();
-              selectFormDept(loc.dept);
-              document.getElementById('record-location-select').value = loc.id;
-              document.getElementById('scan-badge').classList.remove('hidden');
-              onLocationChanged();
-              if (navigator.vibrate) navigator.vibrate(100);
-              return;
-            }
+          if (!targetLocId) targetLocId = text;
+          targetLocId = String(targetLocId).trim().toUpperCase();
+
+          const loc = locations.find(l => String(l.id).trim().toUpperCase() === targetLocId);
+
+          if (loc) {
+            closeCameraScanner();
+            selectFormDept(loc.dept);
+            document.getElementById('record-location-select').value = loc.id;
+            document.getElementById('scan-badge').classList.remove('hidden');
+            onLocationChanged();
+            if (navigator.vibrate) navigator.vibrate(100);
+            return;
           }
-          alert('掃描到的 QR Code 未包含有效點位！');
+
+          alert(`掃描到的內容：「${text}」\n系統找不到對應的點位代號 (${targetLocId})！`);
         },
         () => {}
       ).catch(err => {
@@ -1127,30 +1171,41 @@
 
       const tags = document.getElementById('staff-tags-container');
       tags.innerHTML = staffList.map(s => `
-        <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 border border-slate-300 rounded-full text-xs font-medium text-slate-700">
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100/80 border border-slate-200 rounded-full text-xs font-semibold text-slate-700">
           ${s.name} <span class="text-slate-400">| ${s.role}</span>
-          <button onclick="removeStaff('${s.id}')" class="text-red-500 hover:text-red-700 font-bold ml-1">✕</button>
+          <button onclick="removeStaff('${s.id}')" class="text-slate-400 hover:text-rose-600 font-bold ml-0.5">✕</button>
         </span>
       `).join('');
     }
 
-    function addStaff() {
+    async function addStaff() {
       const name = document.getElementById('new-staff-name').value.trim();
       const role = document.getElementById('new-staff-role').value.trim() || '藥師';
       if (!name) return alert('請輸入人員姓名');
 
-      staffList.push({ id: 'STF-' + Date.now().toString().slice(-4), name, role });
-      syncAdmin();
-      document.getElementById('new-staff-name').value = '';
-      document.getElementById('new-staff-role').value = '';
-      renderStaffUI();
+      const newId = 'STF-' + Date.now().toString().slice(-4);
+      try {
+        const { error } = await supabaseClient.from('staff').insert([{ id: newId, name, role }]);
+        if (error) throw error;
+        staffList.push({ id: newId, name, role });
+        document.getElementById('new-staff-name').value = '';
+        document.getElementById('new-staff-role').value = '';
+        renderStaffUI();
+      } catch (err) {
+        alert('新增人員失敗: ' + err.message);
+      }
     }
 
-    function removeStaff(id) {
+    async function removeStaff(id) {
       if (staffList.length <= 1) return alert('請至少保留一位人員');
-      staffList = staffList.filter(s => s.id !== id);
-      syncAdmin();
-      renderStaffUI();
+      try {
+        const { error } = await supabaseClient.from('staff').delete().eq('id', id);
+        if (error) throw error;
+        staffList = staffList.filter(s => s.id !== id);
+        renderStaffUI();
+      } catch (err) {
+        alert('刪除人員失敗: ' + err.message);
+      }
     }
 
     function onZoneTypeChange() {
@@ -1178,25 +1233,7 @@
       }
     }
 
-    async function syncAdmin() {
-      setLoading(true);
-      try {
-        await fetch(API_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'SYNC_ADMIN', locations: locations, staffList: staffList })
-        });
-        renderLocationSelect();
-        renderLocationCards();
-      } catch (err) {
-        alert('同步後台失敗: ' + err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    function handleLocationSubmit(e) {
+    async function handleLocationSubmit(e) {
       e.preventDefault();
       const editId = document.getElementById('edit-loc-id').value;
       const dept = document.getElementById('loc-dept').value;
@@ -1207,18 +1244,38 @@
       const maxTemp = parseFloat(document.getElementById('loc-max-temp').value);
       const maxHumidity = zoneType === 'room' ? parseFloat(document.getElementById('loc-max-humidity').value) : null;
 
-      if (editId) {
-        const idx = locations.findIndex(l => l.id === editId);
-        if (idx !== -1) locations[idx] = { id: editId, dept, name, zoneType, defaultTemp, minTemp, maxTemp, maxHumidity };
-      } else {
-        locations.push({ id: 'LOC-' + String(locations.length + 1).padStart(3, '0'), dept, name, zoneType, defaultTemp, minTemp, maxTemp, maxHumidity });
-      }
+      const locId = editId || ('LOC-' + String(locations.length + 1).padStart(3, '0'));
+      const payload = {
+        id: locId,
+        dept: dept,
+        name: name,
+        zone_type: zoneType,
+        default_temp: defaultTemp,
+        min_temp: minTemp,
+        max_temp: maxTemp,
+        max_humidity: maxHumidity
+      };
 
-      resetLocationForm();
-      syncAdmin();
+      try {
+        const { error } = await supabaseClient.from('locations').upsert([payload]);
+        if (error) throw error;
+
+        const locObj = { id: locId, dept, name, zoneType, defaultTemp, minTemp, maxTemp, maxHumidity };
+        if (editId) {
+          const idx = locations.findIndex(l => l.id === editId);
+          if (idx !== -1) locations[idx] = locObj;
+        } else {
+          locations.push(locObj);
+        }
+
+        resetLocationForm();
+        renderLocationSelect();
+        renderLocationCards();
+      } catch (err) {
+        alert('儲存點位失敗: ' + err.message);
+      }
     }
 
-    // 關鍵修正：將 onZoneTypeChange() 移至前面，防止填入數值後被覆蓋
     function editLocation(id) {
       const loc = locations.find(l => l.id === id);
       if (!loc) return;
@@ -1227,7 +1284,7 @@
       document.getElementById('loc-name').value = loc.name;
       document.getElementById('loc-zone-type').value = loc.zoneType;
       
-      onZoneTypeChange(); // 先切換型態顯示欄位
+      onZoneTypeChange();
       
       document.getElementById('loc-default-temp').value = loc.defaultTemp;
       document.getElementById('loc-min-temp').value = loc.minTemp;
@@ -1240,10 +1297,17 @@
       document.getElementById('cancel-loc-btn').classList.remove('hidden');
     }
 
-    function deleteLocation(id) {
+    async function deleteLocation(id) {
       if (!confirm('確定刪除此點位？')) return;
-      locations = locations.filter(l => l.id !== id);
-      syncAdmin();
+      try {
+        const { error } = await supabaseClient.from('locations').delete().eq('id', id);
+        if (error) throw error;
+        locations = locations.filter(l => l.id !== id);
+        renderLocationSelect();
+        renderLocationCards();
+      } catch (err) {
+        alert('刪除點位失敗: ' + err.message);
+      }
     }
 
     function resetLocationForm() {
@@ -1257,26 +1321,26 @@
     function renderLocationCards() {
       const container = document.getElementById('location-cards-container');
       container.innerHTML = locations.map(loc => {
-        let badge = loc.zoneType === 'freezer' ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-100 text-cyan-800">冷凍冰箱</span>' :
-                    (loc.zoneType === 'fridge' ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">冷藏冰箱</span>' :
-                    '<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">常溫室內</span>');
+        let badge = loc.zoneType === 'freezer' ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-cyan-50 text-cyan-800">冷凍冰箱</span>' :
+                    (loc.zoneType === 'fridge' ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800">冷藏冰箱</span>' :
+                    '<span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800">常溫室內</span>');
 
         return `
-          <div class="p-3 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col justify-between space-y-2">
+          <div class="p-3.5 rounded-2xl border border-slate-200/80 bg-white shadow-sm flex flex-col justify-between space-y-2.5">
             <div>
               <div class="flex items-center justify-between">
-                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">${loc.dept}</span>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700">${loc.dept}</span>
                 ${badge}
               </div>
-              <h5 class="text-sm font-bold text-slate-800 mt-1">${loc.name} <span class="text-xs font-mono text-slate-400">(${loc.id})</span></h5>
-              <div class="text-[11px] text-slate-600 mt-1">
+              <h5 class="text-sm font-bold text-slate-800 mt-1.5">${loc.name} <span class="text-xs font-mono text-slate-400">(${loc.id})</span></h5>
+              <div class="text-[11px] text-slate-500 mt-1">
                 預設：<strong>${loc.defaultTemp} °C</strong> ｜ 標準：<strong>${loc.minTemp}~${loc.maxTemp} °C</strong>
               </div>
             </div>
-            <div class="flex items-center gap-1 pt-2 border-t border-slate-100">
-              <button onclick="openQrModal('${loc.id}')" class="flex-1 text-xs py-1 bg-blue-50 text-blue-700 font-bold rounded hover:bg-blue-100">標籤 QR</button>
-              <button onclick="editLocation('${loc.id}')" class="text-xs text-slate-600 hover:text-blue-600 px-2 py-1">編輯</button>
-              <button onclick="deleteLocation('${loc.id}')" class="text-xs text-red-500 hover:text-red-700 px-2 py-1">刪除</button>
+            <div class="flex items-center gap-1.5 pt-2 border-t border-slate-100">
+              <button onclick="openQrModal('${loc.id}')" class="flex-1 text-xs py-1.5 bg-blue-50 text-blue-700 font-bold rounded-xl hover:bg-blue-100 transition">標籤 QR</button>
+              <button onclick="editLocation('${loc.id}')" class="text-xs text-slate-600 hover:text-blue-600 px-2 py-1.5">編輯</button>
+              <button onclick="deleteLocation('${loc.id}')" class="text-xs text-rose-500 hover:text-rose-700 px-2 py-1.5">刪除</button>
             </div>
           </div>
         `;

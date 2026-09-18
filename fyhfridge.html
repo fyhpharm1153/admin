@@ -46,7 +46,7 @@
           <button type="button" onclick="setFontSize('lg')" id="font-btn-lg" class="px-2 py-0.5 rounded text-slate-500 hover:text-slate-800">A</button>
           <button type="button" onclick="setFontSize('xl')" id="font-btn-xl" class="px-2 py-0.5 rounded text-slate-500 hover:text-slate-800">A+</button>
         </div>
-        <button onclick="loadAllData()" class="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition">
+        <button onclick="loadAllData()" class="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition" title="重新整理資料">
           <i data-lucide="rotate-cw" id="refresh-icon" class="w-4 h-4"></i>
         </button>
       </div>
@@ -81,7 +81,7 @@
           <div class="font-bold text-sm flex items-center gap-1.5 text-blue-100">
             <i data-lucide="qr-code" class="w-4 h-4 text-white"></i> 智慧掃碼巡檢
           </div>
-          <p class="text-xs text-blue-100/90 mt-0.5">點擊鏡頭對準冰箱或室溫標籤，自動帶出標準值</p>
+          <p class="text-xs text-blue-100/90 mt-0.5">點擊鏡頭對準冰箱或室溫標籤，自動切換輸入欄位</p>
         </div>
         <button type="button" onclick="openCameraScanner()" class="relative z-10 px-4 py-2 bg-white text-blue-700 font-bold text-xs rounded-xl shadow-sm hover:bg-blue-50 active:scale-95 transition flex items-center gap-1.5 whitespace-nowrap">
           <i data-lucide="camera" class="w-4 h-4"></i> 掃描 QR
@@ -132,21 +132,46 @@
             </div>
           </div>
 
-          <!-- 滾輪下拉選單 -->
-          <div class="grid grid-cols-2 gap-3">
+          <!-- 模式 A：室溫常溫區專用（現在溫度 + 相對濕度） -->
+          <div id="room-input-container" class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-bold text-slate-600 mb-1 flex items-center justify-between">
-                <span>溫度 (°C) *</span>
+                <span>現在溫度 (°C) *</span>
                 <span class="text-[10px] text-blue-600 font-normal">免鍵盤選取</span>
               </label>
               <select id="record-temp-select" onchange="evaluateCompliance()" class="w-full rounded-xl border border-blue-200 p-2.5 text-base font-black text-blue-900 bg-blue-50/40 focus:ring-2 focus:ring-blue-500"></select>
             </div>
-            <div id="humidity-input-block">
+            <div>
               <label class="block text-xs font-bold text-slate-600 mb-1 flex items-center justify-between">
                 <span>相對濕度 (%)</span>
                 <span class="text-[10px] text-slate-400 font-normal">室溫專用</span>
               </label>
               <select id="record-humidity-select" onchange="evaluateCompliance()" class="w-full rounded-xl border border-slate-200 p-2.5 text-base font-bold text-slate-800 bg-slate-50/40 focus:ring-2 focus:ring-blue-500"></select>
+            </div>
+          </div>
+
+          <!-- 模式 B：冷藏與冷凍冰箱專用（最高溫 / 現在溫度 / 最低溫） -->
+          <div id="fridge-input-container" class="hidden space-y-2 p-3 bg-slate-50/70 rounded-2xl border border-slate-200/80">
+            <div class="text-xs font-bold text-indigo-900 flex items-center justify-between">
+              <span class="flex items-center gap-1">
+                <i data-lucide="thermometer-snowflake" class="w-4 h-4 text-indigo-600"></i>
+                冰箱三溫度紀錄模式
+              </span>
+              <span class="text-[10px] text-indigo-500 font-normal">免鍵盤選取</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="block text-[11px] font-bold text-rose-700 mb-1">最高溫 (Max) *</label>
+                <select id="record-temp-max-select" onchange="evaluateCompliance()" class="w-full rounded-xl border border-rose-200 p-2 text-sm sm:text-base font-black text-rose-900 bg-rose-50/50 focus:ring-2 focus:ring-rose-400"></select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-blue-700 mb-1">現在溫度 (Cur) *</label>
+                <select id="record-temp-cur-select" onchange="evaluateCompliance()" class="w-full rounded-xl border border-blue-200 p-2 text-sm sm:text-base font-black text-blue-900 bg-blue-50/50 focus:ring-2 focus:ring-blue-400"></select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-cyan-700 mb-1">最低溫 (Min) *</label>
+                <select id="record-temp-min-select" onchange="evaluateCompliance()" class="w-full rounded-xl border border-cyan-200 p-2 text-sm sm:text-base font-black text-cyan-900 bg-cyan-50/50 focus:ring-2 focus:ring-cyan-400"></select>
+              </div>
             </div>
           </div>
 
@@ -432,10 +457,10 @@
 
   <script>
     // ==========================================
-    // 請填入您的 Supabase 設定
+    // Supabase 設定
     // ==========================================
-const SUPABASE_URL = "https://gavpmvaozsixhahofzyn.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
+    const SUPABASE_URL = "https://gavpmvaozsixhahofzyn.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
     
     // 初始化 Supabase 客戶端
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -491,10 +516,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
       humSelect.value = "55.0";
     }
 
-    function populateTemperatureOptions(zoneType, defaultTemp) {
-      const tempSelect = document.getElementById('record-temp-select');
+    // 產生特定選單的數值範圍
+    function generateTemperatureHtml(zoneType) {
       let min, max, step = 0.1;
-
       if (zoneType === 'freezer') {
         min = -30.0;
         max = -10.0;
@@ -511,12 +535,43 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
         const valStr = t.toFixed(1);
         options += `<option value="${valStr}">${valStr} °C</option>`;
       }
-      tempSelect.innerHTML = options;
+      return options;
+    }
 
-      const targetVal = (defaultTemp !== undefined && !isNaN(defaultTemp))
-        ? Number(defaultTemp).toFixed(1) 
-        : (zoneType === 'freezer' ? '-20.0' : (zoneType === 'fridge' ? '4.5' : '22.0'));
-      tempSelect.value = targetVal;
+    // 智慧指派點位推薦值（最高/現在/最低）
+    function populateTemperatureOptions(zoneType, defaultTemp, curMax = null, curMin = null) {
+      const optHtml = generateTemperatureHtml(zoneType);
+
+      if (zoneType === 'room') {
+        const tempSelect = document.getElementById('record-temp-select');
+        tempSelect.innerHTML = optHtml;
+        const targetVal = (defaultTemp !== undefined && !isNaN(defaultTemp))
+          ? Number(defaultTemp).toFixed(1) 
+          : '22.0';
+        tempSelect.value = targetVal;
+      } else {
+        // 冰箱三溫度選單
+        const maxSelect = document.getElementById('record-temp-max-select');
+        const curSelect = document.getElementById('record-temp-cur-select');
+        const minSelect = document.getElementById('record-temp-min-select');
+
+        maxSelect.innerHTML = optHtml;
+        curSelect.innerHTML = optHtml;
+        minSelect.innerHTML = optHtml;
+
+        const baseVal = (defaultTemp !== undefined && !isNaN(defaultTemp))
+          ? Number(defaultTemp)
+          : (zoneType === 'freezer' ? -20.0 : 4.5);
+
+        // 若無指定歷史值，最高溫自動預設 +0.8°C，最低溫 -0.8°C
+        const valCur = baseVal.toFixed(1);
+        const valMax = (curMax !== null && !isNaN(curMax)) ? Number(curMax).toFixed(1) : (baseVal + 0.8).toFixed(1);
+        const valMin = (curMin !== null && !isNaN(curMin)) ? Number(curMin).toFixed(1) : (baseVal - 0.8).toFixed(1);
+
+        curSelect.value = valCur;
+        maxSelect.value = valMax;
+        minSelect.value = valMin;
+      }
     }
 
     function initDatetime() {
@@ -573,6 +628,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
           locName: r.loc_name,
           zoneType: r.zone_type,
           temp: Number(r.temp),
+          tempMax: (r.temp_max !== null && r.temp_max !== undefined) ? Number(r.temp_max) : null,
+          tempMin: (r.temp_min !== null && r.temp_min !== undefined) ? Number(r.temp_min) : null,
           humidity: r.humidity !== null ? Number(r.humidity) : null,
           status: r.status,
           operator: r.operator,
@@ -646,22 +703,23 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
       const loc = locations.find(l => l.id === locId);
       if (!loc) return;
 
-      const humSelect = document.getElementById('record-humidity-select');
-      const humBlock = document.getElementById('humidity-input-block');
+      const roomBlock = document.getElementById('room-input-container');
+      const fridgeBlock = document.getElementById('fridge-input-container');
       const hintText = document.getElementById('location-hint-text');
+
+      // 依點位設備型態切換輸入模式
+      if (loc.zoneType === 'room') {
+        roomBlock.classList.remove('hidden');
+        fridgeBlock.classList.add('hidden');
+        hintText.textContent = `標準：${loc.minTemp} ~ ${loc.maxTemp} °C (濕度限 ${loc.maxHumidity}% 以下)`;
+      } else {
+        roomBlock.classList.add('hidden');
+        fridgeBlock.classList.remove('hidden');
+        hintText.textContent = `標準：${loc.minTemp} ~ ${loc.maxTemp} °C (需記錄：最高溫、現在溫度、最低溫)`;
+      }
 
       if (!document.getElementById('edit-record-id').value) {
         populateTemperatureOptions(loc.zoneType, loc.defaultTemp);
-        if (loc.zoneType === 'room') {
-          humSelect.disabled = false;
-          humBlock.style.opacity = '1';
-          humSelect.value = "55.0";
-          hintText.textContent = `標準：${loc.minTemp} ~ ${loc.maxTemp} °C (濕度限 ${loc.maxHumidity}% 以下)`;
-        } else {
-          humBlock.style.opacity = '0.3';
-          humSelect.disabled = true;
-          hintText.textContent = `標準：${loc.minTemp} ~ ${loc.maxTemp} °C (免記濕度)`;
-        }
       }
       evaluateCompliance();
     }
@@ -669,22 +727,45 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
     function evaluateCompliance() {
       const locId = document.getElementById('record-location-select').value;
       const loc = locations.find(l => l.id === locId);
-      const temp = parseFloat(document.getElementById('record-temp-select').value);
-      const hum = parseFloat(document.getElementById('record-humidity-select').value);
       const badge = document.getElementById('record-status-badge');
 
-      if (!loc || isNaN(temp)) return;
+      if (!loc) return;
 
       let isCompliant = true;
       let reasons = [];
 
-      if (temp < loc.minTemp || temp > loc.maxTemp) {
-        isCompliant = false;
-        reasons.push(`溫度超標`);
-      }
-      if (loc.zoneType === 'room' && loc.maxHumidity && !isNaN(hum) && hum > loc.maxHumidity) {
-        isCompliant = false;
-        reasons.push(`濕度超標`);
+      if (loc.zoneType === 'room') {
+        const temp = parseFloat(document.getElementById('record-temp-select').value);
+        const hum = parseFloat(document.getElementById('record-humidity-select').value);
+        if (isNaN(temp)) return;
+
+        if (temp < loc.minTemp || temp > loc.maxTemp) {
+          isCompliant = false;
+          reasons.push(`室溫超標 (${temp}°C)`);
+        }
+        if (loc.maxHumidity && !isNaN(hum) && hum > loc.maxHumidity) {
+          isCompliant = false;
+          reasons.push(`濕度超標 (${hum}%)`);
+        }
+      } else {
+        // 冰箱三溫度合規檢驗
+        const curTemp = parseFloat(document.getElementById('record-temp-cur-select').value);
+        const maxTemp = parseFloat(document.getElementById('record-temp-max-select').value);
+        const minTemp = parseFloat(document.getElementById('record-temp-min-select').value);
+        if (isNaN(curTemp) || isNaN(maxTemp) || isNaN(minTemp)) return;
+
+        if (maxTemp > loc.maxTemp) {
+          isCompliant = false;
+          reasons.push(`最高溫超標 (${maxTemp}°C > ${loc.maxTemp}°C)`);
+        }
+        if (minTemp < loc.minTemp) {
+          isCompliant = false;
+          reasons.push(`最低溫過低 (${minTemp}°C < ${loc.minTemp}°C)`);
+        }
+        if (curTemp < loc.minTemp || curTemp > loc.maxTemp) {
+          isCompliant = false;
+          reasons.push(`現在溫度超標 (${curTemp}°C)`);
+        }
       }
 
       if (isCompliant) {
@@ -705,18 +786,30 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
       if (!loc) return alert('請選擇有效監測點位');
 
       const formattedDt = document.getElementById('record-datetime').value.replace('T', ' ');
-      const tempVal = parseFloat(document.getElementById('record-temp-select').value);
-      const humVal = loc.zoneType === 'room' ? parseFloat(document.getElementById('record-humidity-select').value) : null;
       const operator = document.getElementById('record-operator-select').value;
       const notes = document.getElementById('record-notes').value.trim();
 
-      localStorage.setItem('LAST_OPERATOR', operator);
-
+      let tempVal, tempMaxVal = null, tempMinVal = null, humVal = null;
       let status = '合格';
-      if (tempVal < loc.minTemp || tempVal > loc.maxTemp) status = '溫度異常';
-      if (loc.zoneType === 'room' && loc.maxHumidity && humVal > loc.maxHumidity) {
-        status = status === '合格' ? '濕度過高' : '溫濕度皆異常';
+
+      if (loc.zoneType === 'room') {
+        tempVal = parseFloat(document.getElementById('record-temp-select').value);
+        humVal = parseFloat(document.getElementById('record-humidity-select').value);
+        if (tempVal < loc.minTemp || tempVal > loc.maxTemp) status = '溫度異常';
+        if (loc.maxHumidity && humVal > loc.maxHumidity) {
+          status = status === '合格' ? '濕度過高' : '溫濕度皆異常';
+        }
+      } else {
+        tempVal = parseFloat(document.getElementById('record-temp-cur-select').value);
+        tempMaxVal = parseFloat(document.getElementById('record-temp-max-select').value);
+        tempMinVal = parseFloat(document.getElementById('record-temp-min-select').value);
+
+        if (tempMaxVal > loc.maxTemp || tempMinVal < loc.minTemp || tempVal < loc.minTemp || tempVal > loc.maxTemp) {
+          status = '溫度異常';
+        }
       }
+
+      localStorage.setItem('LAST_OPERATOR', operator);
 
       const recId = editId || ('REC-' + Date.now().toString().slice(-6));
       const payload = {
@@ -727,6 +820,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
         loc_name: loc.name,
         zone_type: loc.zoneType,
         temp: tempVal,
+        temp_max: tempMaxVal,
+        temp_min: tempMinVal,
         humidity: humVal,
         status: status,
         operator: operator,
@@ -749,6 +844,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
           locName: loc.name,
           zoneType: loc.zoneType,
           temp: tempVal,
+          tempMax: tempMaxVal,
+          tempMin: tempMinVal,
           humidity: humVal,
           status: status,
           operator: operator,
@@ -784,13 +881,23 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
       document.getElementById('record-location-select').value = record.locId;
       
       const loc = locations.find(l => l.id === record.locId);
-      if (loc) populateTemperatureOptions(loc.zoneType, record.temp);
+      if (loc) {
+        onLocationChanged();
+        if (loc.zoneType === 'room') {
+          populateTemperatureOptions(loc.zoneType, record.temp);
+          document.getElementById('record-temp-select').value = record.temp.toFixed(1);
+          if (record.humidity !== null) {
+            document.getElementById('record-humidity-select').value = record.humidity.toFixed(1);
+          }
+        } else {
+          populateTemperatureOptions(loc.zoneType, record.temp, record.tempMax, record.tempMin);
+          document.getElementById('record-temp-cur-select').value = record.temp.toFixed(1);
+          if (record.tempMax !== null) document.getElementById('record-temp-max-select').value = record.tempMax.toFixed(1);
+          if (record.tempMin !== null) document.getElementById('record-temp-min-select').value = record.tempMin.toFixed(1);
+        }
+      }
 
       document.getElementById('record-datetime').value = record.timestamp.replace(' ', 'T');
-      document.getElementById('record-temp-select').value = record.temp.toFixed(1);
-      if (record.humidity !== null) {
-        document.getElementById('record-humidity-select').value = record.humidity.toFixed(1);
-      }
       document.getElementById('record-operator-select').value = record.operator;
       document.getElementById('record-notes').value = record.notes || '';
 
@@ -869,7 +976,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
                   <span class="text-[10px] px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-bold">常溫 (日巡1次)</span>
                 </div>
                 <div class="text-xs text-slate-500 mt-1.5">
-                  ${hasRecord ? `最新: <strong class="text-slate-900">${latest.temp}°C / ${latest.humidity}%</strong> (${latest.operator} @ ${latest.timestamp.slice(11)})` : `<span class="text-rose-600 font-bold">今日尚未巡檢</span>`}
+                  ${hasRecord ? `最新: <strong class="text-slate-900">${latest.temp}°C / ${latest.humidity}%</strong> (${latest.operator} @${latest.timestamp.slice(11)})` : `<span class="text-rose-600 font-bold">今日尚未巡檢</span>`}
                 </div>
               </div>
               <div>
@@ -896,6 +1003,14 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
           const typeTag = loc.zoneType === 'freezer' ? 'bg-cyan-50 text-cyan-800' : 'bg-indigo-50 text-indigo-800';
           const typeName = loc.zoneType === 'freezer' ? '冷凍' : '冷藏';
 
+          const formatFridgeShort = (rec) => {
+            if (!rec) return '--';
+            if (rec.tempMax !== null && rec.tempMin !== null) {
+              return `${rec.temp}°C (${rec.tempMin}~${rec.tempMax}°C) · ${rec.operator}`;
+            }
+            return `${rec.temp}°C · ${rec.operator}`;
+          };
+
           return `
             <div class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-2.5">
               <div class="flex items-center justify-between">
@@ -915,7 +1030,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
                     <span>早班 (12:00前)</span>
                     <span>${morningRec ? '✓ 完成' : '✗ 待檢'}</span>
                   </div>
-                  <div class="text-xs mt-1 font-mono">${morningRec ? `${morningRec.temp}°C (${morningRec.operator})` : '--'}</div>
+                  <div class="text-[11px] mt-1 font-mono">${formatFridgeShort(morningRec)}</div>
                 </div>
 
                 <div class="p-2.5 rounded-xl border ${afternoonRec ? 'bg-emerald-50/40 border-emerald-200 text-emerald-900' : 'bg-rose-50/40 border-rose-200 text-rose-800'}">
@@ -923,7 +1038,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
                     <span>午班 (12:00後)</span>
                     <span>${afternoonRec ? '✓ 完成' : '✗ 待檢'}</span>
                   </div>
-                  <div class="text-xs mt-1 font-mono">${afternoonRec ? `${afternoonRec.temp}°C (${afternoonRec.operator})` : '--'}</div>
+                  <div class="text-[11px] mt-1 font-mono">${formatFridgeShort(afternoonRec)}</div>
                 </div>
               </div>
             </div>
@@ -1015,13 +1130,33 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
           labels: filtered.map(d => d.timestamp.slice(5)),
           datasets: [
             {
-              label: '溫度 (°C)',
+              label: '現在溫度 (°C)',
               data: filtered.map(d => d.temp),
               borderColor: '#2563eb',
               backgroundColor: 'rgba(37,99,235,0.08)',
               yAxisID: 'y-temp',
               tension: 0.25,
               pointRadius: 3
+            },
+            {
+              label: '最高溫 (°C)',
+              data: filtered.map(d => d.tempMax),
+              borderColor: '#e11d48',
+              borderDash: [4, 4],
+              yAxisID: 'y-temp',
+              tension: 0.25,
+              pointRadius: 2,
+              hidden: true
+            },
+            {
+              label: '最低溫 (°C)',
+              data: filtered.map(d => d.tempMin),
+              borderColor: '#0891b2',
+              borderDash: [4, 4],
+              yAxisID: 'y-temp',
+              tension: 0.25,
+              pointRadius: 2,
+              hidden: true
             },
             {
               label: '濕度 (%)',
@@ -1071,6 +1206,24 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
         const displayTemp = (r.temp !== null && r.temp !== undefined && !isNaN(r.temp)) ? Number(r.temp).toFixed(1) : '--';
         const displayHum = (r.humidity !== null && r.humidity !== undefined && !isNaN(r.humidity)) ? Number(r.humidity).toFixed(1) + '%' : '-';
 
+        // 溫度顯示區塊：冰箱特別呈現最高/最低溫
+        let tempDisplayBlock = '';
+        if (r.zoneType !== 'room' && r.tempMax !== null && r.tempMin !== null) {
+          tempDisplayBlock = `
+            <div class="text-right font-mono">
+              <div class="text-sm font-black ${isAlert && r.status.includes('溫') ? 'text-rose-600' : 'text-slate-900'}">${displayTemp}°C</div>
+              <div class="text-[10px] text-slate-500 font-semibold">${r.tempMin.toFixed(1)} ~ ${r.tempMax.toFixed(1)}°C</div>
+            </div>
+          `;
+        } else {
+          tempDisplayBlock = `
+            <div class="text-right font-mono">
+              <div class="text-sm font-black ${isAlert && r.status.includes('溫') ? 'text-rose-600' : 'text-slate-900'}">${displayTemp}°C</div>
+              <div class="text-[10px] text-slate-400">${displayHum}</div>
+            </div>
+          `;
+        }
+
         return `
           <div class="p-3.5 hover:bg-slate-50/70 transition flex items-center justify-between gap-2">
             <div class="space-y-1">
@@ -1088,10 +1241,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
             </div>
             
             <div class="flex items-center gap-3">
-              <div class="text-right font-mono">
-                <div class="text-sm font-black ${isAlert && r.status.includes('溫') ? 'text-rose-600' : 'text-slate-900'}">${displayTemp}°C</div>
-                <div class="text-[10px] text-slate-400">${displayHum}</div>
-              </div>
+              ${tempDisplayBlock}
               <div class="flex flex-col gap-1 text-[11px]">
                 <button onclick="editRecord('${r.id}')" class="text-blue-600 font-bold hover:underline">編輯</button>
                 <button onclick="deleteRecord('${r.id}')" class="text-rose-500 font-bold hover:underline">刪除</button>
@@ -1233,7 +1383,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
       }
     }
 
-async function handleLocationSubmit(e) {
+    async function handleLocationSubmit(e) {
       e.preventDefault();
       const editId = document.getElementById('edit-loc-id').value;
       const dept = document.getElementById('loc-dept').value;
@@ -1389,9 +1539,9 @@ async function handleLocationSubmit(e) {
     }
 
     function exportCSV() {
-      let csv = "\uFEFF記錄ID,日期時間,藥局區別,位置編號,監測位置,設備類型,溫度(°C),相對濕度(%),合規狀態,人員,備註\n";
+      let csv = "\uFEFF記錄ID,日期時間,藥局區別,位置編號,監測位置,設備類型,現在溫度(°C),最高溫(°C),最低溫(°C),相對濕度(%),合規狀態,人員,備註\n";
       records.forEach(r => {
-        csv += `"${r.id}","${r.timestamp}","${r.dept}","${r.locId}","${r.locName}","${r.zoneType}","${r.temp}","${r.humidity || ''}","${r.status}","${r.operator}","${r.notes || ''}"\n`;
+        csv += `"${r.id}","${r.timestamp}","${r.dept}","${r.locId}","${r.locName}","${r.zoneType}","${r.temp}","${r.tempMax ?? ''}","${r.tempMin ?? ''}","${r.humidity ?? ''}","${r.status}","${r.operator}","${r.notes || ''}"\n`;
       });
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const a = document.createElement('a');

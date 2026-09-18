@@ -1233,7 +1233,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
       }
     }
 
-    async function handleLocationSubmit(e) {
+async function handleLocationSubmit(e) {
       e.preventDefault();
       const editId = document.getElementById('edit-loc-id').value;
       const dept = document.getElementById('loc-dept').value;
@@ -1244,7 +1244,17 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
       const maxTemp = parseFloat(document.getElementById('loc-max-temp').value);
       const maxHumidity = zoneType === 'room' ? parseFloat(document.getElementById('loc-max-humidity').value) : null;
 
-      const locId = editId || ('LOC-' + String(locations.length + 1).padStart(3, '0'));
+      // 智慧編號：搜尋現存最大的 LOC 序號並自動 +1
+      let nextNum = 1;
+      if (locations.length > 0) {
+        const existingNums = locations.map(l => {
+          const match = String(l.id).match(/\d+/);
+          return match ? parseInt(match[0], 10) : 0;
+        });
+        nextNum = Math.max(...existingNums, 0) + 1;
+      }
+      const locId = editId || ('LOC-' + String(nextNum).padStart(3, '0'));
+
       const payload = {
         id: locId,
         dept: dept,
@@ -1271,6 +1281,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_IHuHJG-PLJrlKqGx0fydUg_91IFCgi8";
         resetLocationForm();
         renderLocationSelect();
         renderLocationCards();
+        alert(`點位 ${locId} 儲存成功！`);
       } catch (err) {
         alert('儲存點位失敗: ' + err.message);
       }
